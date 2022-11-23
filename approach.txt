@@ -1,0 +1,11 @@
+   q1, q2, q3, q4, q5
+u1 10, 14, 13, , 80
+
+
+- Content-based: trova similarità tra le varie query
+
+X classe classificatore
+- trovare gli answers' set delle query
+- calcolare la similarità tra i vari insiemi (cosine similarity) -> compara le persone del primo set con il secondo e prendere la media delle similarità più alte
+- la similarità si calcola tramite vettori
+- convertire i dati in vettori?
