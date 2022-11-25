@@ -6,8 +6,8 @@ import string
 import pandas as pd
 
 #constants
-MAX_DATA = 100
-MAX_QUERIES = 10
+MAX_DATA = 20
+MAX_QUERIES = 4
 MAX_USERS = 20
 
 #arrays of data
@@ -19,13 +19,13 @@ def get_data():
 
 	global names, addresses, occupations
 
-	with open("./input/names.txt") as file:
+	with open("./old_input/names.txt") as file:
 		names = [line.strip() for line in file]
 
-	with open("./input/addresses.txt") as file:
+	with open("./old_input/addresses.txt") as file:
 		addresses = [line.strip() for line in file]
 
-	with open("./input/occupations.txt") as file:
+	with open("./old_input/occupations.txt") as file:
 		occupations = [line.strip() for line in file]
 
 	#print("names: " + str(len(names)))
@@ -105,9 +105,9 @@ def create_queries():
 
 		randomID, randomName, randomAddress, randomAge, randomOccupation = None, None, None, None, None #attributes that haven't been picked yet
 
-		choice = random.randint(0, 1) #try to pick id for query
+		'''choice = random.randint(0, 1) #try to pick id for query
 		if choice == 1:
-			randomID = "id=" + str(random.randint(1, MAX_DATA))
+			randomID = "id=" + str(random.randint(1, MAX_DATA))'''
 
 		choice = random.randint(0, 1) #try to pick name for query
 		if choice == 1:
@@ -177,6 +177,7 @@ def create_matrix():
 	for index, row in random_users.iterrows():
 		user = []
 		user.append(row[0])
+
 		for i in range(len(queries)):
 			choice = random.randint(0, 1) #try to evaluate query
 			if choice == 1:
@@ -184,6 +185,7 @@ def create_matrix():
 				user.append(score)
 			else:
 				user.append("")
+
 		users.append(user)
 
 	write_csv("utility_matrix", queries, users)
@@ -196,7 +198,7 @@ if __name__ == "__main__":
 	#select the generation target
 	parser = argparse.ArgumentParser(description="Data Generator")
 
-	parser.add_argument('--func', nargs='?', default='')
+	parser.add_argument('--func', nargs='?', default=create_matrix)
 
 	subparsers = parser.add_subparsers()
 	
