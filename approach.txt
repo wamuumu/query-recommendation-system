@@ -14,3 +14,7 @@ X trovare gli answers' set delle query
 - calcolare la similarità tra i vari insiemi (cosine similarity) -> compara le persone del primo set con il secondo e prendere la media delle similarità più alte
 - la similarità si calcola tramite vettori
 - convertire i dati in vettori?
+
+
+# BIG IDEA
+Convertire l'answer set in plain text, lsh per trovare i candidate pairs

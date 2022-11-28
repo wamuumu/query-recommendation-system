@@ -198,7 +198,7 @@ if __name__ == "__main__":
 	#select the generation target
 	parser = argparse.ArgumentParser(description="Data Generator")
 
-	parser.add_argument('--func', nargs='?', default=create_matrix)
+	parser.add_argument('--func', nargs='?', default=create_queries)
 
 	subparsers = parser.add_subparsers()
 	

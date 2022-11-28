@@ -1,103 +1,7 @@
 import pandas as pd
-import pandasql as ps
-import random
-import numpy as np
-from scipy.spatial import distance
-
-class Recommender:
-
-	def __init__(self, users, queries, dataset, ratings):
-		self.users = users
-		self.queries = queries
-		self.dataset = dataset
-		self.ratings = ratings
-
-	def compute_query(self, attributes:list):
-		df = self.dataset
-
-		attr = " and ".join(attributes)
-		query = "select * from df where " + attr
-		
-		#print("Query: " + query)
-
-		return ps.sqldf(query) 
-
-	def jaccard_similarity(self, list1:list, list2:list):
-	    s1 = set(list1)
-	    s2 = set(list2)
-	    return float(len(s1.intersection(s2)) / len(s1.union(s2)))
-
-	def cosine_similarity(self, list1:list, list2:list):
-		return 1 - distance.cosine(list1, list2)
-
-	def compute_query_similarity(self): #queries' indexes
-		qr = self.queries
-
-		matrix = []
-		for drow in self.dataset.iterrows(): #people
-			#print(drow[1]['id'])
-			mrow = []
-			for qrow in self.ratings.columns: #queries of utility matrix
-				
-				contain = True
-
-				for attr in qr[qrow]:
-					tmp = attr.replace('"', '').split("=")
-					col, val = tmp[0], tmp[1]
-
-					if drow[1][col] != val:
-						contain = False
-						break
-
-				if contain:
-					mrow.append(1)
-				else:
-					mrow.append(0)
-
-			matrix.append(mrow)
-
-		#print(np.array(matrix))
-		
-		PERM = 10 #number of independent hash functions (e.g. 100)
-
-		sign_mat = []
-		perm = [i for i in range(0, len(self.dataset))]
-
-		for i in range(PERM):
-			signature = [-1 for z in range(len(self.ratings.columns))]
-			pre = perm
-			random.shuffle(perm) #shuffle the indexes
-
-			partition = np.argpartition(perm, pre).tolist()
-
-			for d in range(len(self.dataset)):
-				index_min = partition[0]
-				for j in range(len(self.ratings.columns)): #iterate over all utility matrix queries
-					if matrix[index_min][j] == 1:
-						signature[j] = perm[index_min]
-				partition.remove(partition[0])
-
-				if not -1 in signature:
-					break
-
-			sign_mat.append(signature)
-
-		print(sign_mat)
-		
-		#SBAGLIATO
-		data = [tuple(row) for row in np.array(sign_mat)]
-		unique_signatures = np.unique(data, axis=0)
-		print(unique_signatures)
-
-		signatures = unique_signatures.transpose() #queries
-
-		print(signatures)
-		print()
-
-		for i in range(len(signatures)):
-			for j in range(i+1, len(signatures)):
-				print(list(ratings.columns)[i] + " - " + list(ratings.columns)[j] + " -> " + "Jaccard: " + str(self.jaccard_similarity(signatures[i], signatures[j])))
-			print()
+from recommender import Recommender
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 def parse_queries(path:str):
 
@@ -120,8 +24,24 @@ def parse_queries(path:str):
 
 	return data
 
+def clean_data(x):
+    if isinstance(x, list):
+        return [str.lower(i.replace(" ", "")) for i in x]
+    else:
+        if isinstance(x, str):
+            return str.lower(x.replace(" ", ""))
+        elif isinstance(x, int):
+        	return str(x)
+        else:
+            return ''
+
+def create_text(x):
+	return x['name'] + ' ' + x['age'] + ' ' + x['address'] + ' ' + x['occupation']
+
 if __name__ == "__main__":
-		
+	
+	features = ["name","address","age","occupation"]
+
 	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None)
 	queries = parse_queries("./resources/output/queries.csv")
 	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0)
@@ -138,8 +58,47 @@ if __name__ == "__main__":
 	print(usersIDs)'''
 
 	recommender = Recommender(users, queries, dataset, ratings)
-	#result = recommender.compute_query(queries['Q1']) #lista campi in conjunction
 
-	recommender.compute_query_similarity()
+	'''signatures = recommender.compute_signatures()
+	similarity = recommender.compute_lsh(signatures)
+
+
+	print()
+	recommender.compute_query(queries['Q1'])
+	print()
+	recommender.compute_query(queries['Q2'])
+	print()
+	recommender.compute_query(queries['Q3'])'''
+
+	features_dataset = dataset.drop(columns=['id'])
+	for feature in features:
+		features_dataset[feature] = features_dataset[feature].apply(clean_data)
+
+	features_dataset['desc'] = features_dataset.apply(create_text, axis=1)
+
+	print(features_dataset)
+
+	# In CountVectorizer we only count the number of times a word appears in the document which results in biasing in favour of most frequent words.
+	# In TfidfVectorizer we consider overall document weightage of a word. TfidfVectorizer weights the word counts by a measure of how often they appear in the documents.
+	count = CountVectorizer(stop_words='english')
+	count_matrix = count.fit_transform(features_dataset['desc'])
+
+	# cosine similarity for different document size
+	# jaccard for short documents of equal size
+	print(count_matrix)
+	cosine_sim = cosine_similarity(count_matrix, count_matrix)
+
+	for r in range(cosine_sim.shape[0]):
+		for c in range(cosine_sim.shape[0]):
+			cosine_sim[r][c] = round(cosine_sim[r][c], 2)
+
+	print()
+	print(cosine_sim)
+	print()
+
+	for q in queriesIDs:
+		recommender.compute_query(queries[q])
+		print()
+
 
 	exit(0)
