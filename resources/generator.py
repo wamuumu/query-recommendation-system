@@ -6,9 +6,11 @@ import string
 import pandas as pd
 
 #constants
-MAX_DATA = 50
-MAX_QUERIES = 4
-MAX_USERS = 20
+MAX_DATA = 1000
+MAX_QUERIES = 100
+MAX_USERS = 50
+MIN_ETA, MAX_ETA = 20, 30
+MIN_VOTE, MAX_VOTE = 20, 100
 
 #arrays of data
 names = []
@@ -59,14 +61,14 @@ def create_dataset():
 		name_ind = random.randint(0, len(names) - 1)
 		address_ind = random.randint(0, len(addresses) - 1)
 		occupation_ind = random.randint(0, len(occupations) - 1)
-		age = random.randint(22, 23)
+		age = random.randint(MIN_ETA, MAX_ETA)
 
 		item = (len(data) + 1, names[name_ind], addresses[address_ind], age, occupations[occupation_ind])
 
-		if item in data:
+		'''if item in data:
 			continue
-		else:
-			data.add(item)
+		else:'''
+		data.add(item)
 
 	dataset = list(map(list, data))
 	sorted_dataset = sorted(dataset, key=lambda tup: tup[0])
@@ -119,7 +121,7 @@ def create_queries():
 
 		choice = random.randint(0, 1) #try to pick age for query
 		if choice == 1:
-			randomAge = "age=" + str(random.randint(18, 65))
+			randomAge = "age=" + str(random.randint(MIN_ETA, MAX_ETA))
 
 		choice = random.randint(0, 1) #try to pick occupation for query
 		if choice == 1:
@@ -127,7 +129,7 @@ def create_queries():
 
 		item = (queryID, randomID, randomName, randomAddress, randomAge, randomOccupation)
 
-		if item in data or (randomID == None and randomName == None and randomAddress == None and randomAge == None and randomOccupation == None):
+		if (randomID == None and randomName == None and randomAddress == None and randomAge == None and randomOccupation == None):
 			continue
 		else:
 			data.add(item)
@@ -179,9 +181,9 @@ def create_matrix():
 		user.append(row[0])
 
 		for i in range(len(queries)):
-			choice = random.randint(0, 1) #try to evaluate query
-			if choice == 1:
-				score = random.randint(1, 100)
+			choice = random.randint(0, 5) #try to evaluate query
+			if choice <= 4:
+				score = random.randint(MIN_VOTE, MAX_VOTE)
 				user.append(score)
 			else:
 				user.append("")
@@ -198,7 +200,7 @@ if __name__ == "__main__":
 	#select the generation target
 	parser = argparse.ArgumentParser(description="Data Generator")
 
-	parser.add_argument('--func', nargs='?', default=create_dataset)
+	parser.add_argument('--func', nargs='?', default='')
 
 	subparsers = parser.add_subparsers()
 	
@@ -221,7 +223,13 @@ if __name__ == "__main__":
 		get_data()
 
 		#execute the specified generative function
-		args.func()
+		#args.func()
+
+		create_dataset()
+		create_users()
+		create_queries()
+		create_matrix()
+
 	except:
 		print("Generative function not found! Please specify what needs to be generated...", file = sys.stderr)
 		exit(1)

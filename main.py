@@ -4,10 +4,11 @@ from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import math
 import numpy as np
+from resources import generator
 
 pd.options.mode.chained_assignment = None 
 
-QUERY_THRESH = 0.6
+QUERY_THRESH = 0.4
 USER_THRESH = 0.4
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
@@ -149,7 +150,9 @@ if __name__ == "__main__":
 
 	finalPredictions = ratings.copy()
 	for i, j in nanIdexes:
-		if math.isnan(userPredictions[queriesIDs[j]][i]):
+		if math.isnan(userPredictions[queriesIDs[j]][i]) and math.isnan(queryPredictions[queriesIDs[j]][i]):
+			finalPredictions[queriesIDs[j]][i] = -1
+		elif math.isnan(userPredictions[queriesIDs[j]][i]):
 			finalPredictions[queriesIDs[j]][i] =  round(queryPredictions[queriesIDs[j]][i] * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
 		elif math.isnan(queryPredictions[queriesIDs[j]][i]):
 			finalPredictions[queriesIDs[j]][i] =  round(userPredictions[queriesIDs[j]][i] * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
@@ -158,7 +161,15 @@ if __name__ == "__main__":
 	
 	print("\nFINAL PREDICTIONS")	
 	print(finalPredictions)
-	print()
+	print()	
+
+	csv_rows = finalPredictions.to_numpy().tolist()
+	
+	for ind in range(len(list(finalPredictions.index.values))):
+		csv_rows[ind].insert(0, finalPredictions.index.values[ind])
+
+	print(len(usersIDs), len(queriesIDs), len(usersIDs) * len(queriesIDs))
+	generator.write_csv("output", finalPredictions.columns, csv_rows)
 
 	'''print()
 	recommender.compute_query(queries['Q1'])
