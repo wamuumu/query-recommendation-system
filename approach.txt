@@ -15,6 +15,5 @@ X trovare gli answers' set delle query
 - la similarità si calcola tramite vettori
 - convertire i dati in vettori?
 
-
-# BIG IDEA
-Convertire l'answer set in plain text, lsh per trovare i candidate pairs
+- pearson correlation fra utenti simili
+- determina un voto facendo la media tra i voti degli utenti simili e la media delle query simili

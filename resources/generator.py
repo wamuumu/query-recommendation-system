@@ -6,7 +6,7 @@ import string
 import pandas as pd
 
 #constants
-MAX_DATA = 20
+MAX_DATA = 50
 MAX_QUERIES = 4
 MAX_USERS = 20
 
@@ -59,7 +59,7 @@ def create_dataset():
 		name_ind = random.randint(0, len(names) - 1)
 		address_ind = random.randint(0, len(addresses) - 1)
 		occupation_ind = random.randint(0, len(occupations) - 1)
-		age = random.randint(18, 65)
+		age = random.randint(22, 23)
 
 		item = (len(data) + 1, names[name_ind], addresses[address_ind], age, occupations[occupation_ind])
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
 	#select the generation target
 	parser = argparse.ArgumentParser(description="Data Generator")
 
-	parser.add_argument('--func', nargs='?', default=create_queries)
+	parser.add_argument('--func', nargs='?', default=create_dataset)
 
 	subparsers = parser.add_subparsers()
 	

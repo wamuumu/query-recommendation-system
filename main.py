@@ -2,6 +2,17 @@ import pandas as pd
 from recommender import Recommender
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import math
+import numpy as np
+
+pd.options.mode.chained_assignment = None 
+
+QUERY_THRESH = 0.6
+USER_THRESH = 0.4
+QUERY_WEIGHT = 0.6
+USER_WEIGHT = 0.4
+DEFAULT_MEAN = 60
+
 
 def parse_queries(path:str):
 
@@ -35,6 +46,33 @@ def clean_data(x):
         else:
             return ''
 
+def brute_similarity(recommender, queries, query1ID, query2ID, mat):
+	
+	d1 = recommender.compute_query(queries[query1ID])
+	d2 = recommender.compute_query(queries[query2ID])
+
+	union_dfs = pd.concat([d1, d2]).drop_duplicates(subset=['id'])
+
+	#total = max([len(d1.index), len(d2.index)])
+	total = len(union_dfs.index)
+
+	'''print(d1)
+	print()
+	print(d2)
+	print()'''
+
+	thresh = 0.5
+	count = 0
+
+	for id1 in d1['id']:
+		for id2 in d2['id']:
+			#print("comparing " + str(id1) + " and " + str(id2))
+			if mat[id1-1][id2-1] >= thresh:
+				count += 1
+				break
+
+	return round(count / total, 2)
+
 def create_text(x):
 	return x['name'] + ' ' + x['age'] + ' ' + x['address'] + ' ' + x['occupation']
 
@@ -59,16 +97,75 @@ if __name__ == "__main__":
 
 	recommender = Recommender(users, queries, dataset, ratings)
 
-	'''signatures = recommender.compute_signatures()
-	similarity = recommender.compute_lsh(signatures)
+	querySimilarities = recommender.compute_querySimilarities()
+	userSimilarities = recommender.compute_userSimilarities()
 
-
+	print(querySimilarities)
 	print()
+	print("\nINITIAL RATINGS:")	
+	print(ratings)
+
+	nanIdexes = []
+	for u in range(len(usersIDs)):
+		for key, value in ratings.iteritems():
+			if math.isnan(value[usersIDs[u]]):
+				#print(u, queriesIDs.index(key))
+				nanIdexes.append((u, queriesIDs.index(key)))
+
+	
+	# QUERY SIMILARITIES USING LSH AND MIN-HASHING
+
+	queryPredictions = ratings.copy()
+	for i, j in nanIdexes:
+		weightSum = 0
+		weightedAverage = 0
+		for s in range(len(querySimilarities[j])):
+			if querySimilarities[j][s] >= QUERY_THRESH and s != j and not math.isnan(ratings[queriesIDs[s]][i]):
+				weightedAverage += querySimilarities[j][s] * ratings[queriesIDs[s]][i]
+				weightSum += querySimilarities[j][s]
+		if weightSum != 0 and weightedAverage != 0:
+			queryPredictions[queriesIDs[j]][i] = round(weightedAverage / weightSum)
+
+	print("\nQUERY PREDICTIONS")	
+	print(queryPredictions)
+
+	# COLLABORATIVE-FILTERING USER-USER
+
+	userPredictions = ratings.copy()
+	for i, j in nanIdexes:
+		weightSum = 0
+		weightedAverage = 0
+		for u in range(len(usersIDs)):
+			if userSimilarities[i][u] >= USER_THRESH and u != i and not math.isnan(ratings[queriesIDs[j]][u]):
+				weightedAverage += ratings[queriesIDs[j]][u] * userSimilarities[i][u]
+				weightSum += userSimilarities[i][u]
+		if weightSum != 0 and weightedAverage != 0:
+			userPredictions[queriesIDs[j]][i] = round(weightedAverage / weightSum)
+
+	print("\nUSER PREDICTIONS")	
+	print(userPredictions)
+
+	# HYBRID PREDICTIONS
+
+	finalPredictions = ratings.copy()
+	for i, j in nanIdexes:
+		if math.isnan(userPredictions[queriesIDs[j]][i]):
+			finalPredictions[queriesIDs[j]][i] =  round(queryPredictions[queriesIDs[j]][i] * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
+		elif math.isnan(queryPredictions[queriesIDs[j]][i]):
+			finalPredictions[queriesIDs[j]][i] =  round(userPredictions[queriesIDs[j]][i] * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
+		else:
+			finalPredictions[queriesIDs[j]][i] = round(queryPredictions[queriesIDs[j]][i] * QUERY_WEIGHT + userPredictions[queriesIDs[j]][i] * USER_WEIGHT)
+	
+	print("\nFINAL PREDICTIONS")	
+	print(finalPredictions)
+	print()
+
+	'''print()
 	recommender.compute_query(queries['Q1'])
-	print()
+	print()	
 	recommender.compute_query(queries['Q2'])
 	print()
-	recommender.compute_query(queries['Q3'])'''
+	recommender.compute_query(queries['Q3'])
 
 	features_dataset = dataset.drop(columns=['id'])
 	for feature in features:
@@ -85,7 +182,7 @@ if __name__ == "__main__":
 
 	# cosine similarity for different document size
 	# jaccard for short documents of equal size
-	print(count_matrix)
+	#print(count_matrix)
 	cosine_sim = cosine_similarity(count_matrix, count_matrix)
 
 	for r in range(cosine_sim.shape[0]):
@@ -96,9 +193,8 @@ if __name__ == "__main__":
 	print(cosine_sim)
 	print()
 
-	for q in queriesIDs:
-		recommender.compute_query(queries[q])
-		print()
+	brute = brute_similarity(recommender, queries, 'Q1', 'Q3', cosine_sim)
 
+	print("Brute similarity -> " + str(brute))'''
 
 	exit(0)

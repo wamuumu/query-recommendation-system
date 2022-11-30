@@ -3,8 +3,9 @@ import numpy as np
 import pandasql as ps
 from itertools import combinations
 from scipy.spatial import distance
+from scipy import sparse
 
-PERM = 100 #number of independent hash functions (e.g. 100) for computing signatures' matrix
+PERM = 300 #number of independent hash functions (e.g. 100) for computing signatures' matrix
 
 class Recommender:
 
@@ -21,8 +22,12 @@ class Recommender:
 
 		q1 = "SELECT * FROM df WHERE " + attr
 		print(q1)
+		result = ps.sqldf(q1, locals())
 
-		print(ps.sqldf(q1, locals()))
+		print(result)
+		print()
+
+		return result
 
 	def jaccard_similarity(self, list1:list, list2:list):
 	    s1 = set(list1)
@@ -35,6 +40,18 @@ class Recommender:
 	def euclidean_similarity(self, list1:list, list2:list):
 		return 1 - distance.euclidean(list1, list2)
 
+	def centered_cosine_similarity(self, list1:list, list2:list):
+		
+		mean = np.nanmean(list1)
+		list1 = np.array([x if not np.isnan(x) else mean for x in list1 ])
+		list1 = list(map(lambda x: x - mean, list1))
+
+		mean = np.nanmean(list2)
+		list2 = np.array([x if not np.isnan(x) else mean for x in list2 ])
+		list2 = list(map(lambda x: x - mean, list2))
+
+		return self.cosine_similarity(list1, list2)
+
 	def compute_shingles(self):
 
 		qr = self.queries
@@ -42,8 +59,10 @@ class Recommender:
 		dt = self.dataset
 
 		shingles_matrix = []
+		#print(dt)
 		for drow in dt.iterrows(): #dataset data
 			#print(drow[1]['id'])
+			
 			mrow = []
 			for qrow in rt.columns: #queries of utility matrix
 				
@@ -53,9 +72,13 @@ class Recommender:
 					tmp = attr.replace('"', '').split("=")
 					col, val = tmp[0], tmp[1]
 
-					if drow[1][col] != val:
+					#print(col, val)
+
+					if str(drow[1][col]) != str(val):
 						contain = False
 						break
+
+				#print(contain)
 
 				if contain:
 					mrow.append(1)
@@ -64,7 +87,7 @@ class Recommender:
 
 			shingles_matrix.append(mrow)
 
-		#print(np.array(matrix))
+		#print(np.array(shingles_matrix))
 		return shingles_matrix
 
 	def compute_signatures(self):
@@ -94,13 +117,15 @@ class Recommender:
 		for i in range(PERM):
 			signature = [-1] * len(rt.columns)
 			random.shuffle(perm) #shuffle the indexes
+			col = set()
 
 			partition = np.argpartition(perm, pre).tolist() #find all indexes of argmins in permutation
 
 			for d in range(len(dt)):
 				index_min = partition[0]
 				for j in range(len(rt.columns)): #iterate over all utility matrix queries
-					if shingles_matrix[index_min][j] == 1:
+					if j not in col and shingles_matrix[index_min][j] == 1:
+						col.add(j)
 						signature[j] = perm[index_min]
 				partition.remove(partition[0])
 
@@ -108,6 +133,8 @@ class Recommender:
 					break
 
 			sign_mat.append(signature)
+
+		#print(sign_mat)
 
 		# check if signatures are unique
 		'''data = [tuple(row) for row in np.array(sign_mat)]
@@ -128,17 +155,50 @@ class Recommender:
 
 		return np.array(sign_mat).transpose() #get column, i.e. signature
 
-	def compute_lsh(self, signatures:list):
+	def compute_querySimilarities(self):
 
-		b = 10
+		b, r, thresh = 150, 2, 0.5
 
 		lsh = LSH(b)
+
+		signatures = self.compute_signatures()
+		#print(signatures)
 
 		for sign in signatures:
 			lsh.add_hash(sign)
 		
+		#print(lsh.buckets)
+
 		candidate_pairs = lsh.check_candidates()
 		print(candidate_pairs)
+		
+		mat = np.empty((len(signatures), len(signatures)))
+		mat[:] = np.nan
+
+		for i, j in candidate_pairs:
+			sim = self.cosine_similarity(signatures[i], signatures[j])
+			mat[i][j] = sim
+			mat[j][i] = sim
+			if sim >= thresh:
+				print("[" + str(i) + ", " + str(j) + "] -> ok (" + str(sim) + ") >= " + str(thresh) + ")")
+			else:
+				print("[" + str(i) + ", " + str(j) + "] -> no (" + str(sim) + ") < " + str(thresh) + ")")
+
+		return mat
+
+	def compute_userSimilarities(self):
+
+		users = list(self.ratings.index.values)
+
+		mat = np.zeros((len(users), len(users)))
+
+		for i in range(len(users)):
+			for j in range(len(users)):
+				#print(self.ratings.to_numpy()[i], self.ratings.to_numpy()[j])
+				#print()
+				mat[i][j] = self.centered_cosine_similarity(self.ratings.to_numpy()[i], self.ratings.to_numpy()[j])
+
+		return mat
 
 class LSH:
 
@@ -180,12 +240,18 @@ class LSH:
 			subvec = ','.join(subvec)
 			#print(i, subvec)
 			if len(self.buckets[i].keys()) > 0:
+				found = False
 				for k in self.buckets[i].keys():
-					if self.jaccard_similarity(subvec, k) >= 0.8:
+					if subvec == k:
 						self.buckets[i][k].append(self.counter)
-			
-			self.buckets[i][subvec] = []
-			self.buckets[i][subvec].append(self.counter)
+						found = True
+
+				if not found:
+					self.buckets[i][subvec] = []
+					self.buckets[i][subvec].append(self.counter)
+			else:
+				self.buckets[i][subvec] = []
+				self.buckets[i][subvec].append(self.counter)
 		self.counter += 1
 
 	def check_candidates(self):
