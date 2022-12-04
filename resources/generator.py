@@ -4,11 +4,13 @@ import random
 import csv
 import string
 import pandas as pd
+import numpy as np
+import time
 
 #constants
-MAX_DATA = 1000
-MAX_QUERIES = 100
-MAX_USERS = 50
+MAX_DATA = 50000
+MAX_QUERIES = 10000
+MAX_USERS = 1000
 MIN_ETA, MAX_ETA = 20, 30
 MIN_VOTE, MAX_VOTE = 20, 100
 
@@ -16,6 +18,10 @@ MIN_VOTE, MAX_VOTE = 20, 100
 names = []
 addresses = []
 occupations = []
+
+random.seed(time.time())
+
+features = ["name","address","age","occupation"]
 
 def get_data():
 
@@ -143,44 +149,50 @@ def create_queries():
 
 	print("Queries' set created and saved in /output/queries.csv")
 
-def count_rows(filename:str, total_rows:int=0):
-	with open(filename,"r") as fh:
-		total_rows = sum(1 for row in fh)
-	return total_rows
+def parse_queries(path:str):
 
-def sample_n_from_csv(filename:str, n:int=0, total_rows:int=None) -> pd.DataFrame:
-	if total_rows is not None:
-		skip_rows = random.sample(range(1, total_rows+1), total_rows-n)
-		return pd.read_csv(filename, skiprows=skip_rows, sep='delimiter', engine='python')
-	return None
+	data = []
+	indexes = []
+	pdict = {}
+
+	with open(path) as f:
+		for row in f:
+			row = row.rstrip('\n')
+			values = row.split(",")
+			indexes.append(values[0])
+			values = values[1::]
+
+			element = ["" for i in range(len(features))]
+
+			for val in values:
+				attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
+				ind = features.index(attr[0])
+				element[ind] = attr[1]
+
+			data.append(element)
+
+	data = np.array(data).transpose()
+
+	for i in range(len(features)):
+		pdict[features[i]] = data[i] 
+
+	return pd.DataFrame(pdict, index = indexes)
 
 def create_matrix():
 	
 	print("Generating partial utility matrix...")
 
-	cu, cq = count_rows("./output/users.csv"), count_rows("./output/queries.csv")
-	ru, rq = random.randint(1, cu), random.randint(1, cq)
+	users = pd.read_csv("./output/users.csv", names = ["id"], header = None)['id'].to_numpy()
+	queries = parse_queries("./output/queries.csv").index.values
 
-	random_users = sample_n_from_csv("./output/users.csv", n = ru, total_rows = cu)
-	random_queries = sample_n_from_csv("./output/queries.csv", n = rq, total_rows = cq)
+	scores = []
 
-	#print(len(random_users))
-	#print(random_users)
-
-	#print(len(random_queries))
-	#print(random_queries)
-
-	queries = []
-	users = []
-
-	for index, row in random_queries.iterrows():
-		queries.append(row[0].split(",")[0])
-
-	for index, row in random_users.iterrows():
+	for u in users:
 		user = []
-		user.append(row[0])
+		user.append(u)
 
 		for i in range(len(queries)):
+
 			choice = random.randint(0, 5) #try to evaluate query
 			if choice <= 4:
 				score = random.randint(MIN_VOTE, MAX_VOTE)
@@ -188,9 +200,9 @@ def create_matrix():
 			else:
 				user.append("")
 
-		users.append(user)
+		scores.append(user)
 
-	write_csv("utility_matrix", queries, users)
+	write_csv("utility_matrix", queries, scores)
 
 	print("Partial utility matrix created and saved in /output/utility_matrix.csv")
 
@@ -218,20 +230,20 @@ if __name__ == "__main__":
 	
 	args = parser.parse_args()
 
-	try:
+	#try:
 		#fetch all the data from files into arrays
-		get_data()
+	get_data()
 
-		#execute the specified generative function
-		#args.func()
+	#execute the specified generative function
+	#args.func()
 
-		create_dataset()
-		create_users()
-		create_queries()
-		create_matrix()
+	create_dataset()
+	create_users()
+	create_queries()
+	create_matrix()
 
-	except:
-		print("Generative function not found! Please specify what needs to be generated...", file = sys.stderr)
-		exit(1)
+	#except:
+		#print("Generative function not found! Please specify what needs to be generated...", file = sys.stderr)
+		#exit(1)
 
-	exit(0)
+	#exit(0)

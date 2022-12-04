@@ -4,8 +4,13 @@ import pandasql as ps
 from itertools import combinations
 from scipy.spatial import distance
 from scipy import sparse
+import time
 
-PERM = 300 #number of independent hash functions (e.g. 100) for computing signatures' matrix
+PERM = 100 #number of independent hash functions (e.g. 100) for computing signatures' matrix
+b = 50
+QUERY_THRESH = 0.35
+USER_THRESH = 0.35
+features = ["name","address","age","occupation"]
 
 class Recommender:
 
@@ -21,11 +26,11 @@ class Recommender:
 		attr = " and ".join(attributes)
 
 		q1 = "SELECT * FROM df WHERE " + attr
-		print(q1)
+		#print(q1)
 		result = ps.sqldf(q1, locals())
 
-		print(result)
-		print()
+		#print(result)
+		#print()
 
 		return result
 
@@ -40,129 +45,78 @@ class Recommender:
 	def euclidean_similarity(self, list1:list, list2:list):
 		return 1 - distance.euclidean(list1, list2)
 
-	def centered_cosine_similarity(self, list1:list, list2:list):
-		
-		mean = np.nanmean(list1)
-		list1 = np.array([x if not np.isnan(x) else mean for x in list1 ])
-		list1 = list(map(lambda x: x - mean, list1))
-
-		mean = np.nanmean(list2)
-		list2 = np.array([x if not np.isnan(x) else mean for x in list2 ])
-		list2 = list(map(lambda x: x - mean, list2))
-
-		return self.cosine_similarity(list1, list2)
-
 	def compute_shingles(self):
 
-		qr = self.queries
-		rt = self.ratings
-		dt = self.dataset
+		initial = time.time()
 
-		shingles_matrix = []
-		#print(dt)
-		for drow in dt.iterrows(): #dataset data
-			#print(drow[1]['id'])
-			
-			mrow = []
-			for qrow in rt.columns: #queries of utility matrix
-				
-				contain = True
+		queries = self.queries.to_numpy()
+		users = self.dataset.drop(columns=['id'])
 
-				for attr in qr[qrow]:
-					tmp = attr.replace('"', '').split("=")
-					col, val = tmp[0], tmp[1]
+		shingles_matrix = np.zeros((len(users), len(queries)))
+		
+		#print(queries)
+		#print(users)
+		#print(features)
 
-					#print(col, val)
+		for q in range(len(queries)):
+			filteredDataset = users.loc[((queries[q][0] == '') or (users[features[0]] == queries[q][0])) & ((queries[q][1] == '') or (users[features[1]] == queries[q][1])) & ((queries[q][2] == '') or (users[features[2]] == int(queries[q][2]))) & ((queries[q][3] == '') or (users[features[3]] == queries[q][3]))]
 
-					if str(drow[1][col]) != str(val):
-						contain = False
-						break
+			for ind in filteredDataset.index:
+				shingles_matrix[ind][q] = 1
 
-				#print(contain)
+			print(str((q / len(queries))*100) + "%")
 
-				if contain:
-					mrow.append(1)
-				else:
-					mrow.append(0)
-
-			shingles_matrix.append(mrow)
-
-		#print(np.array(shingles_matrix))
+		print(str(time.time() - initial) + "s for shingles_matrix")
 		return shingles_matrix
 
 	def compute_signatures(self):
 		
-		qr = self.queries
-		rt = self.ratings
-		dt = self.dataset
-
+		initial = time.time()
 		shingles_matrix = self.compute_shingles()
 
-		# PROBLEMA: con molte permutazioni, le signature tendono ad assomigliarsi sebbene le 
-		# queries siano diverse. 
-
-		# Quindi LSH e bucket oppure cambiare metodo di similarità
-
-		'''
-	
-		A major disadvantage of the Jaccard index is that it is highly influenced by the size of the data. 
-		Large datasets can have a big impact on the index as it could significantly increase the union whilst keeping the intersection similar.
-
-		'''
-
 		sign_mat = []
-		perm = [i for i in range(0, len(dt))] #inital permutation (serie)
+		perm = [i for i in range(0, len(self.dataset))] #inital permutation (serie)
 		pre = perm #save initial indexes
 
 		for i in range(PERM):
-			signature = [-1] * len(rt.columns)
+			signature = [-1] * len(self.ratings.columns)
 			random.shuffle(perm) #shuffle the indexes
-			col = set()
 
+			'''
 			partition = np.argpartition(perm, pre).tolist() #find all indexes of argmins in permutation
-
-			for d in range(len(dt)):
+			countQuery = 0
+			for d in range(len(perm)):
 				index_min = partition[0]
-				for j in range(len(rt.columns)): #iterate over all utility matrix queries
-					if j not in col and shingles_matrix[index_min][j] == 1:
-						col.add(j)
+				for j in range(len(self.ratings.columns)): #iterate over all utility matrix queries
+					if not pickedQuery[j] and shingles_matrix[index_min][j] == 1:
+						pickedQuery[j] = True
+						countQuery += 1
 						signature[j] = perm[index_min]
 				partition.remove(partition[0])
 
-				if not -1 in signature:
+				if countQuery == len(signature):
 					break
 
+			'''
+			for q in range(len(self.ratings.columns)):
+				for d in range(len(perm)):
+					if shingles_matrix[perm[d]][q] == 1:
+						signature[q] = perm[d]
+						break
 			sign_mat.append(signature)
 
-		#print(sign_mat)
+			print(str((len(sign_mat) / PERM)*100) + "%")
 
-		# check if signatures are unique
-		'''data = [tuple(row) for row in np.array(sign_mat)]
-
-		unique_signatures = np.unique(data, axis=0, return_index=True)[1]
-		unique_signatures = np.array([list(data[index]) for index in sorted(unique_signatures)])'''
-
-		#signatures = np.array(sign_mat).transpose() #queries
-
-		'''print(signatures)
-		print()
-
-		for i in range(len(signatures)):
-			for j in range(len(signatures)):
-				print(list(ratings.columns)[i] + " - " + list(ratings.columns)[j] + " -> " + "Jaccard: " + str(self.jaccard_similarity(signatures[i], signatures[j])))
-			print()
-		'''
-
+		print(str(time.time() - initial) + "s for signature_matrix")
 		return np.array(sign_mat).transpose() #get column, i.e. signature
 
 	def compute_querySimilarities(self):
 
-		b, r, thresh = 150, 2, 0.5
-
 		lsh = LSH(b)
 
 		signatures = self.compute_signatures()
-		#print(signatures)
+
+		initial = time.time()
 
 		for sign in signatures:
 			lsh.add_hash(sign)
@@ -173,31 +127,45 @@ class Recommender:
 		print(candidate_pairs)
 		
 		mat = np.empty((len(signatures), len(signatures)))
-		mat[:] = np.nan
+		mat[:] = 0
 
 		for i, j in candidate_pairs:
 			sim = self.cosine_similarity(signatures[i], signatures[j])
-			mat[i][j] = sim
-			mat[j][i] = sim
-			if sim >= thresh:
-				print("[" + str(i) + ", " + str(j) + "] -> ok (" + str(sim) + ") >= " + str(thresh) + ")")
+			if sim >= QUERY_THRESH:
+				mat[i][j] = sim
+				mat[j][i] = sim
 			else:
-				print("[" + str(i) + ", " + str(j) + "] -> no (" + str(sim) + ") < " + str(thresh) + ")")
+				mat[i][j] = 0
+				mat[j][i] = 0
 
+		print(str(time.time() - initial) + "s for candidate_pairs")
 		return mat
 
 	def compute_userSimilarities(self):
 
 		users = list(self.ratings.index.values)
+		norm = self.ratings.copy().to_numpy()
 
 		mat = np.zeros((len(users), len(users)))
 
-		for i in range(len(users)):
-			for j in range(len(users)):
-				#print(self.ratings.to_numpy()[i], self.ratings.to_numpy()[j])
-				#print()
-				mat[i][j] = self.centered_cosine_similarity(self.ratings.to_numpy()[i], self.ratings.to_numpy()[j])
+		#normalize rating's vector for pearson's similarity
+		for i in range(len(users)):		
+			mean = np.nanmean(norm[i])
+			norm[i] = np.where(np.isnan(norm[i]), 0, norm[i] - mean)
 
+		initial = time.time()
+		for i in range(len(users)):
+			for j in range(i+1, len(users)):
+				sim = self.cosine_similarity(norm[i], norm[j])
+				if sim >= USER_THRESH:
+					mat[i][j] = sim
+					mat[j][i] = sim
+				else:
+					mat[i][j] = 0
+					mat[j][i] = 0
+			print(str(((i+1) / len(users))*100) + "%")
+
+		print(str(time.time() - initial) + "s for users_similarity")
 		return mat
 
 class LSH:
