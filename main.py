@@ -1,10 +1,11 @@
-import pandas as pd
 from recommender import Recommender
+from resources import generator
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+import pandas as pd
 import math, time
 import numpy as np
-from resources import generator
 
 pd.options.mode.chained_assignment = None 
 
@@ -39,16 +40,10 @@ if __name__ == "__main__":
 	querySimilarities = recommender.compute_querySimilarities()
 	userSimilarities = recommender.compute_userSimilarities()
 
-	print("\nINITIAL RATINGS:")	
-	print(ratings)
-
-	nanIdexes = np.array(np.where(np.asanyarray(np.isnan(ratings)))).transpose()
-
-	print(nanIdexes)
-	print("\n" + str(len(nanIdexes)) + " scores to predict")
+	scores_to_predict = np.array(np.where(np.asanyarray(np.isnan(ratings)))).transpose()
 
 	# QUERY SIMILARITIES USING LSH AND MIN-HASHING
-
+	
 	initial = time.time()
 	queryPrediction = 0
 	userPrediction = 0
@@ -71,7 +66,7 @@ if __name__ == "__main__":
 			empty_user_weights[u] = True
 
 	count = 0
-	for i, j in nanIdexes:
+	for i, j in scores_to_predict:
 
 		# QUERY SIMILARITIES USING LSH AND MIN-HASHING
 		if empty_query_weights[j]:
@@ -96,7 +91,7 @@ if __name__ == "__main__":
 
 		# HYBRID PREDICTIONS
 		if userPrediction == 0 and queryPrediction == 0:
-			finalPredictions[i][j] = -1 #cannot find a predictable value
+			finalPredictions[i][j] = np.nan #cannot find a predictable value
 		elif userPrediction == 0:
 			finalPredictions[i][j] =  round(queryPrediction * (QUERY_WEIGHT+  (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
 		elif queryPrediction == 0:
@@ -107,15 +102,24 @@ if __name__ == "__main__":
 		
 		count += 1
 
-		print(str((count / len(nanIdexes))*100) + "%")
+		print(str((count / len(scores_to_predict))*100) + "%")
 
-	print(time.time() - initial)
+	print(str(time.time() - initial) + "s to calculate weighted averages")
 
-	finalPredictions = pd.DataFrame(finalPredictions, columns = queriesIDs, index = usersIDs).astype(int)
 	
+	finalPredictions = pd.DataFrame(finalPredictions, columns = queriesIDs, index = usersIDs)
+	score_missed = np.array(np.where(np.asanyarray(np.isnan(finalPredictions)))).transpose()
+	finalPredictions = finalPredictions.fillna(-1)
+
+	print("\nINITIAL RATINGS:")	
+	print(ratings)
+
+	print("\n" + str(len(scores_to_predict)) + " scores to predict")
+
 	print("\nFINAL PREDICTIONS")	
 	print(finalPredictions)
-	print()	
+
+	print("\n" + str(len(score_missed)) + " scores missed [" + str(round(len(score_missed) / len(scores_to_predict), 2) * 100) + "%]")
 
 	'''
 	print(time.time() - initial)
