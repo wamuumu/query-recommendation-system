@@ -6,11 +6,12 @@ import string
 import pandas as pd
 import numpy as np
 import time
+import math
 
 #constants
-MAX_DATA = 10000
-MAX_QUERIES = 1000
-MAX_USERS = 1000
+MAX_DATA = 100
+MAX_QUERIES = 100
+MAX_USERS = 100
 MIN_ETA, MAX_ETA = 20, 30
 MIN_VOTE, MAX_VOTE = 20, 100
 
@@ -182,27 +183,14 @@ def create_matrix():
 	
 	print("Generating partial utility matrix...")
 
-	users = pd.read_csv("./output/users.csv", names = ["id"], header = None)['id'].to_numpy()
+	users = pd.read_csv("./output/users.csv", names = ["id"], header = None, engine="pyarrow")['id'].to_numpy()
 	queries = parse_queries("./output/queries.csv").index.values
 
-	scores = []
+	randomScores = np.random.randint(low=MIN_VOTE, high=MAX_VOTE, size=( len(users), len(queries))).astype('O')
+	mask = np.random.randint(0, 5, size=randomScores.shape).astype(bool)
+	randomScores[np.logical_not(mask)] = ""
 
-	for u in users:
-		user = []
-		user.append(u)
-
-		for i in range(len(queries)):
-
-			choice = random.randint(0, 5) #try to evaluate query
-			if choice <= 4:
-				score = random.randint(MIN_VOTE, MAX_VOTE)
-				user.append(score)
-			else:
-				user.append("")
-
-		scores.append(user)
-
-	write_csv("utility_matrix", queries, scores)
+	write_csv("utility_matrix", queries, randomScores)
 
 	print("Partial utility matrix created and saved in /output/utility_matrix.csv")
 

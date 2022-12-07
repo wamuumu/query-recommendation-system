@@ -14,16 +14,27 @@ USER_WEIGHT = 0.4
 DEFAULT_MEAN = 60
 
 
-def nanaverage(A,weights,axis):
-    return np.nansum(A*weights,axis=axis)/((~np.isnan(A))*weights).sum(axis=axis)
+def nan_average(A,weights,axis):
+	den = ((~np.isnan(A))*weights).sum(axis=axis)
+	return 0 if den == 0 else np.nansum(A*weights,axis=axis)/den
 
 if __name__ == "__main__":
 
-	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None)
-	queries = generator.parse_queries("./resources/output/queries.csv")
+	initial = time.time()
+	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None, engine="pyarrow")
+	print(str(time.time() - initial) + "s to read users")
 
-	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0)
-	ratings = pd.read_csv("./resources/output/utility_matrix.csv")
+	initial = time.time()
+	queries = generator.parse_queries("./resources/output/queries.csv")
+	print(str(time.time() - initial) + "s to read queries")
+
+	initial = time.time()
+	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0, engine="pyarrow")
+	print(str(time.time() - initial) + "s to read dataset")
+
+	initial = time.time()
+	ratings = pd.read_csv("./resources/output/utility_matrix.csv", engine="pyarrow")
+	print(str(time.time() - initial) + "s to read utility matrix")
 
 	queriesIDs = list(ratings.columns)
 	usersIDs = list(ratings.index.values)
@@ -48,9 +59,7 @@ if __name__ == "__main__":
 	queryPrediction = 0
 	userPrediction = 0
 	
-	supportDataframe = ratings.copy().to_numpy().transpose()
 	finalPredictions = ratings.copy().to_numpy()
-	ratings = ratings.fillna(0)
 	
 	qpred = [-1] * len(usersIDs) # 1 value for each user (between queries)
 	upred = [-1] * len(queriesIDs) # 1 value for each query (between users)
@@ -65,6 +74,7 @@ if __name__ == "__main__":
 		if not np.any(userSimilarities[u]):
 			empty_user_weights[u] = True
 
+	# 33s with no averages
 	count = 0
 	for i, j in scores_to_predict:
 
@@ -73,17 +83,19 @@ if __name__ == "__main__":
 			queryPrediction = 0
 		else:
 			if qpred[i] == -1:
-				queryPrediction = round(np.average(a = ratings.iloc[i].to_numpy(), weights = querySimilarities[j]))
+				queryPrediction = round(nan_average(ratings.iloc[i].to_numpy(), querySimilarities[j], 0))
 				qpred[i] = queryPrediction
 			else:
 				queryPrediction = qpred[i]
+
+		#input("Press Enter to continue...")
 		
 		# COLLABORATIVE FILTERING USER-USER
 		if empty_user_weights[i]:
 			userPrediction = 0
 		else:
 			if upred[j] == -1:
-				userPrediction = round(nanaverage(supportDataframe[j], userSimilarities[i], 0))
+				userPrediction = round(nan_average(ratings.to_numpy().transpose()[j], userSimilarities[i], 0))
 				upred[j] = userPrediction
 			else:
 				userPrediction = upred[j]
@@ -109,17 +121,12 @@ if __name__ == "__main__":
 	
 	finalPredictions = pd.DataFrame(finalPredictions, columns = queriesIDs, index = usersIDs)
 	score_missed = np.array(np.where(np.asanyarray(np.isnan(finalPredictions)))).transpose()
-	finalPredictions = finalPredictions.fillna(-1)
 
-	print("\nINITIAL RATINGS:")	
+	print("\nINITIAL RATINGS [{} scores to predict]:".format(len(scores_to_predict)))	
 	print(ratings)
 
-	print("\n" + str(len(scores_to_predict)) + " scores to predict")
-
-	print("\nFINAL PREDICTIONS")	
+	print("\nFINAL PREDICTIONS [{} scores missed - {}%]:".format(len(score_missed), round(len(score_missed) / len(scores_to_predict), 2) * 100))	
 	print(finalPredictions)
-
-	print("\n" + str(len(score_missed)) + " scores missed [" + str(round(len(score_missed) / len(scores_to_predict), 2) * 100) + "%]")
 
 	'''
 	print(time.time() - initial)
