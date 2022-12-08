@@ -1,19 +1,22 @@
 from lsh import LSH
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
-from scipy.spatial import distance
 from scipy.sparse import csr_matrix
 
+import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import collections
+import math
 import time
+import sys
 import random
 
+pd.options.mode.chained_assignment = None 
+
 PERM = 100 #number of independent hash functions (e.g. 100) for computing signatures' matrix
-QUERY_THRESH = 0.65
-USER_THRESH = 0.55
+SCALING_FACTOR = 10000
+
+QUERY_WEIGHT = 0.6
+USER_WEIGHT = 0.4
+DEFAULT_MEAN = 60
 
 features = ["name","address","age","occupation"]
 
@@ -22,10 +25,12 @@ random.seed(time.time())
 class Recommender:
 
 	def __init__(self, users, queries, dataset, ratings):
-		self.users = users
+		self.users = users.to_numpy()
 		self.queries = queries.to_numpy()
 		self.dataset = dataset
-		self.ratings = ratings
+		self.queriesIDs = list(ratings.columns)
+		self.usersIDs = list(ratings.index.values)
+		self.ratings = ratings.to_numpy()
 
 	def compute_shingles(self):
 
@@ -47,10 +52,8 @@ class Recommender:
 				if not ind in shingles_matrix.keys():
 					shingles_matrix[ind] = []
 				shingles_matrix[ind].append(q)
-	
-			print(str((q / len(self.queries))*100) + "%")
 
-		print(str(time.time() - initial) + "s for shingles_matrix")
+		print(str(round(time.time() - initial, 3)) + "s for shingles_matrix")
 		return shingles_matrix
 
 	def compute_signatures(self):
@@ -61,13 +64,13 @@ class Recommender:
 
 		sign_mat = np.empty((PERM, len(self.queries)))
 		sign_mat[:] = -1
-		queryList = set()
 
 		perm = [d for d in range(len(self.dataset))]
 
 		for i in range(PERM):
 			random.shuffle(perm) #shuffle the indexes
 
+			queryList = set()
 			partition = np.argsort(perm)
 
 			while len(self.queries) != len(queryList) and len(partition) != 0:
@@ -79,9 +82,8 @@ class Recommender:
 							sign_mat[i][q] = perm[index_min]
 				partition = np.delete(partition, 0)
 
-			print(str(((i+1) / PERM)*100) + "%")
+		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
 
-		print(str(time.time() - initial) + "s for signature_matrix")
 		return sign_mat.transpose() #get column, i.e. signature
 
 	def compute_querySimilarities(self):
@@ -90,82 +92,104 @@ class Recommender:
 
 		initial = time.time()
 		
-		
 		# SPARSE MATRIX APPROACH 43.6s
 		sig_sparse = csr_matrix(signatures)
-		sig_sim = cosine_similarity(sig_sparse)
+		query_sim = cosine_similarity(sig_sparse)
 
-		for i in range(len(signatures)):
-			sig_sim[i][i] = 0
+		#QUERY_THRESH = np.percentile(query_sim, 97)
 
-			emptySig = False
+		#query_sim[query_sim < QUERY_THRESH] = 0
+		query_sim = np.array(query_sim * SCALING_FACTOR, dtype='int16')
+		np.fill_diagonal(query_sim, 0)
+
+		CANDIDATES = round(math.log(len(self.queries), 1.5))
+		top_query = {}
+
+		for i in range(len(query_sim)):	
 			if all(s == -1 for s in signatures[i]):
-				emptySig = True
+				query_sim[i] = 0
+				query_sim[:,i] = 0
 
-			for j in range(i+1, len(signatures)):
-				if sig_sim[i][j] < QUERY_THRESH or emptySig:
-					sig_sim[i][j] = 0
-					sig_sim[j][i] = 0
+			top_query[i] = np.argsort(query_sim[i])[::-1][0:CANDIDATES]
 
-			print(str(((i+1) / len(signatures))*100) + "%")
-
-		'''
-		# LSH APPROACH USING BUCKETS (10000 data - 10000 query - 1000 user -> Memory error)
-		
-		QUERY_THRESH = 0.35
-		USER_THRESH = 0.35
-		buckets = 25 #bands of size PERM / buckets
-
-		lsh = LSH(buckets)
-
-		for sig in signatures:
-			lsh.add_hash(sig)
-		
-		#print(lsh.buckets)
-
-		candidate_pairs = lsh.check_candidates()
-		#print(candidate_pairs)
-		
-		sig_sim = np.empty((len(signatures), len(signatures)))
-		sig_sim[:] = 0
-
-		count = 0
-		for i, j in candidate_pairs:
-			sim = cosine_similarity([signatures[i]], [signatures[j]])[0][0]
-			if sim >= QUERY_THRESH:
-				sig_sim[i][j] = sim
-				sig_sim[j][i] = sim
-			else:
-				sig_sim[i][j] = 0
-				sig_sim[j][i] = 0
-
-			count += 1
-
-			print(str((count / len(candidate_pairs)) * 100) + "%")
-
-		'''
-		print(str(time.time() - initial) + "s for queries_similarity")
-		return sig_sim
+		print(str(round(time.time() - initial, 3)) + "s for queries_similarity")
+		return query_sim, top_query
 
 	def compute_userSimilarities(self):
 
 		initial = time.time()
 
-		norm = self.ratings.copy().fillna(0).to_numpy()
+		norm = np.copy(self.ratings)
+		norm[np.isnan(norm)] = 0
+
 		user_sim = np.corrcoef(norm)
 
-		# 43s
-		for i in range(len(self.ratings.index.values)):
-			user_sim[i][i] = 0
-			for j in range(i+1, len(self.ratings.index.values)):
-				if user_sim[i][j] < USER_THRESH:
-					user_sim[i][j] = 0
-					user_sim[j][i] = 0
-			print(str(((i+1) / len(self.ratings.index.values))*100) + "%")
+		#USER_THRESH = np.percentile(user_sim, 97)
 
-		print(str(time.time() - initial) + "s for users_similarity")
+		#user_sim[user_sim < USER_THRESH] = 0
+		user_sim = np.array(user_sim * SCALING_FACTOR, dtype='int16')
+		np.fill_diagonal(user_sim, 0)
+
+		CANDIDATES = round(math.log(len(self.users), 1.5))
+		top_users = {}
+
+		for i in range(len(self.users)):
+			top_users[i] = np.argsort(user_sim[i])[::-1][0:CANDIDATES]
+
+		print(str(round(time.time() - initial, 3)) + "s for users_similarity")
 		
-		return user_sim
+		return user_sim, top_users
+
+	def compute_scores(self):
+
+		querySimilarities, topQueryIndexes = self.compute_querySimilarities()
+		userSimilarities, topUserIndexes = self.compute_userSimilarities()
+
+		scores_to_predict = np.array(np.where(np.isnan(self.ratings))).transpose()
+
+		queryPrediction = 0
+		userPrediction = 0
+		finalPredictions = np.copy(self.ratings)
+
+		initial = time.time()
+
+		count = 0
+		for i, j in scores_to_predict:
+
+			userRating = np.array(self.ratings[i][topQueryIndexes[j]])
+			simScores = np.array(querySimilarities[j][topQueryIndexes[j]])
+			queryPrediction = self.nan_average(userRating, simScores)
+
+			userRating = np.array(self.ratings.transpose()[j][topUserIndexes[i]])
+			simScores = np.array(userSimilarities[i][topUserIndexes[i]])
+			userPrediction = self.nan_average(userRating, simScores)
+
+			# HYBRID PREDICTIONS
+			if userPrediction == 0 and queryPrediction == 0:
+				finalPredictions[i][j] = np.nan #cannot find a predictable value
+			elif userPrediction == 0:
+				finalPredictions[i][j] = round(queryPrediction * (QUERY_WEIGHT+  (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
+			elif queryPrediction == 0:
+				finalPredictions[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
+			else:
+				finalPredictions[i][j] = round(queryPrediction * QUERY_WEIGHT + userPrediction * USER_WEIGHT)
+
+			count += 1
+
+			if count % 10000 == 0:
+				print("{} / {} [{}s]".format(count, len(scores_to_predict), round(time.time() - initial, 3)))
+
+		print(str(round(time.time() - initial, 3)) + "s for weighted averages")
+
+		finalPredictions = pd.DataFrame(finalPredictions, columns = self.queriesIDs, index = self.usersIDs)
+		scores_missed = np.array(np.where(np.asanyarray(np.isnan(finalPredictions)))).transpose()
+
+		return len(scores_to_predict), finalPredictions, len(scores_missed)
+
+	def nan_average(self, values, weights):
+		weights = weights / SCALING_FACTOR
+		weightSum = ((~np.isnan(values)) * weights).sum()
+		return 0 if weightSum == 0 else np.nansum(values * weights) / weightSum
 
 
 

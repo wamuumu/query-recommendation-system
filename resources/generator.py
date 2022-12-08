@@ -1,4 +1,3 @@
-import argparse
 import sys
 import random
 import csv
@@ -6,7 +5,6 @@ import string
 import pandas as pd
 import numpy as np
 import time
-import math
 
 #constants
 MAX_DATA = 100
@@ -197,41 +195,11 @@ def create_matrix():
 
 if __name__ == "__main__":
 
-	#select the generation target
-	parser = argparse.ArgumentParser(description="Data Generator")
-
-	parser.add_argument('--func', nargs='?', default='')
-
-	subparsers = parser.add_subparsers()
-	
-	parser_dataset = subparsers.add_parser('dataset', help='Create a new dataset')
-	parser_dataset.set_defaults(func=create_dataset)
-
-	parser_dataset = subparsers.add_parser('users', help='Create a new set of users')
-	parser_dataset.set_defaults(func=create_users)
-
-	parser_dataset = subparsers.add_parser('queries', help='Create a new set of queries')
-	parser_dataset.set_defaults(func=create_queries)
-
-	parser_dataset = subparsers.add_parser('matrix', help='Create a new partial utility matrix')
-	parser_dataset.set_defaults(func=create_matrix)
-	
-	args = parser.parse_args()
-
-	#try:
-		#fetch all the data from files into arrays
 	get_data()
-
-	#execute the specified generative function
-	#args.func()
 
 	create_dataset()
 	create_users()
 	create_queries()
 	create_matrix()
 
-	#except:
-		#print("Generative function not found! Please specify what needs to be generated...", file = sys.stderr)
-		#exit(1)
-
-	#exit(0)
+	exit(0)

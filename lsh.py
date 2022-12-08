@@ -57,3 +57,40 @@ class LSH:
 				if len(hits) > 1:
 					candidates.extend(combinations(hits, 2))
 		return set(candidates)
+
+
+	'''
+	# LSH APPROACH USING BUCKETS (10000 data - 10000 query - 1000 user -> Memory error)
+	
+	QUERY_THRESH = 0.35
+	USER_THRESH = 0.35
+	buckets = 25 #bands of size PERM / buckets
+
+	lsh = LSH(buckets)
+
+	for sig in signatures:
+		lsh.add_hash(sig)
+	
+	#print(lsh.buckets)
+
+	candidate_pairs = lsh.check_candidates()
+	#print(candidate_pairs)
+	
+	sig_sim = np.empty((len(signatures), len(signatures)))
+	sig_sim[:] = 0
+
+	count = 0
+	for i, j in candidate_pairs:
+		sim = cosine_similarity([signatures[i]], [signatures[j]])[0][0]
+		if sim >= QUERY_THRESH:
+			sig_sim[i][j] = sim
+			sig_sim[j][i] = sim
+		else:
+			sig_sim[i][j] = 0
+			sig_sim[j][i] = 0
+
+		count += 1
+
+		print(str((count / len(candidate_pairs)) * 100) + "%")
+
+	'''
