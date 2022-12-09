@@ -44,14 +44,15 @@ class Recommender:
 			for f in range(len(features)):
 				if self.queries[q][f] != "":
 					if self.queries[q][f].isdigit():
-						filteredDataset = filteredDataset.loc[filteredDataset[features[f]] == int(self.queries[q][f])]
+						filteredDataset = filteredDataset[filteredDataset[features[f]] == int(self.queries[q][f])]
 					else:
-						filteredDataset = filteredDataset.loc[filteredDataset[features[f]] == self.queries[q][f]]
+						filteredDataset = filteredDataset[filteredDataset[features[f]] == self.queries[q][f]]
+			
 
 			for ind in filteredDataset.index.values:
 				if not ind in shingles_matrix.keys():
-					shingles_matrix[ind] = []
-				shingles_matrix[ind].append(q)
+					shingles_matrix[ind] = set()
+				shingles_matrix[ind].add(q)
 
 		print(str(round(time.time() - initial, 3)) + "s for shingles_matrix")
 		return shingles_matrix

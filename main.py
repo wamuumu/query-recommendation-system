@@ -11,15 +11,15 @@ pd.options.mode.chained_assignment = None
 if __name__ == "__main__":
 
 	initial = time.time()
-	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None, engine="pyarrow")
+	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None, engine="pyarrow", dtype = {'id':'category'})
 	print(str(round(time.time() - initial, 3)) + "s to read users")
 
 	initial = time.time()
-	queries = generator.parse_queries("./resources/output/queries.csv")
+	queries = generator.parse_queries("./resources/output/queries.csv").astype({'name':'category', 'address':'category', 'occupation':'category'})
 	print(str(round(time.time() - initial, 3)) + "s to read queries")
 
 	initial = time.time()
-	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0, engine="pyarrow")
+	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0, engine="pyarrow", dtype = {'name':'category', 'address':'category', 'occupation':'category'})
 	print(str(round(time.time() - initial, 3)) + "s to read dataset")
 
 	initial = time.time()

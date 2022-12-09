@@ -7,9 +7,9 @@ import numpy as np
 import time
 
 #constants
-MAX_DATA = 100
-MAX_QUERIES = 100
-MAX_USERS = 100
+MAX_DATA = 10000
+MAX_QUERIES = 1000
+MAX_USERS = 1000
 MIN_ETA, MAX_ETA = 20, 30
 MIN_VOTE, MAX_VOTE = 20, 100
 
