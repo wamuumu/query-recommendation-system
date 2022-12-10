@@ -7,7 +7,6 @@ import numpy as np
 import math
 import time
 import sys
-import random
 
 pd.options.mode.chained_assignment = None 
 
@@ -20,8 +19,6 @@ DEFAULT_MEAN = 60
 
 features = ["name","address","age","occupation"]
 
-random.seed(time.time())
-
 class Recommender:
 
 	def __init__(self, users, queries, dataset, ratings):
@@ -31,6 +28,7 @@ class Recommender:
 		self.queriesIDs = list(ratings.columns)
 		self.usersIDs = list(ratings.index.values)
 		self.ratings = ratings.to_numpy()
+		self.tupleCount = {}
 
 	def compute_shingles(self):
 
@@ -48,9 +46,10 @@ class Recommender:
 					else:
 						filteredDataset = filteredDataset[filteredDataset[features[f]] == self.queries[q][f]]
 			
+			self.tupleCount[q] = len(filteredDataset.index.values)
 
 			for ind in filteredDataset.index.values:
-				if not ind in shingles_matrix.keys():
+				if not ind in shingles_matrix:
 					shingles_matrix[ind] = set()
 				shingles_matrix[ind].add(q)
 
@@ -66,21 +65,24 @@ class Recommender:
 		sign_mat = np.empty((PERM, len(self.queries)))
 		sign_mat[:] = -1
 
-		perm = [d for d in range(len(self.dataset))]
+		queryList = set()
+		perm = np.arange(len(self.dataset))
 
 		for i in range(PERM):
-			random.shuffle(perm) #shuffle the indexes
+			np.random.shuffle(perm)
+			queryList.clear()
 
-			queryList = set()
 			partition = np.argsort(perm)
 
 			while len(self.queries) != len(queryList) and len(partition) != 0:
+
 				index_min = partition[0]
-				if index_min in shingles_matrix.keys():
-					for q in shingles_matrix[index_min]:
-						if not q in queryList:
-							queryList.add(q)
-							sign_mat[i][q] = perm[index_min]
+				if index_min in shingles_matrix:
+					
+					queryIndex = list(queryList.difference(shingles_matrix[index_min]))
+					sign_mat[i][queryIndex] = perm[index_min]
+					queryList.update(queryIndex)
+
 				partition = np.delete(partition, 0)
 
 		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
@@ -157,10 +159,12 @@ class Recommender:
 		count = 0
 		for i, j in scores_to_predict:
 
+			# COLLABORATIVE FILTERING QUERY-QUERY
 			userRating = np.array(self.ratings[i][topQueryIndexes[j]])
 			simScores = np.array(querySimilarities[j][topQueryIndexes[j]])
 			queryPrediction = self.nan_average(userRating, simScores)
 
+			# COLLABORATIVE FILTERING USER-USER
 			userRating = np.array(self.ratings.transpose()[j][topUserIndexes[i]])
 			simScores = np.array(userSimilarities[i][topUserIndexes[i]])
 			userPrediction = self.nan_average(userRating, simScores)
@@ -169,7 +173,7 @@ class Recommender:
 			if userPrediction == 0 and queryPrediction == 0:
 				finalPredictions[i][j] = np.nan #cannot find a predictable value
 			elif userPrediction == 0:
-				finalPredictions[i][j] = round(queryPrediction * (QUERY_WEIGHT+  (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
+				finalPredictions[i][j] = round(queryPrediction * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
 			elif queryPrediction == 0:
 				finalPredictions[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
 			else:
@@ -179,6 +183,7 @@ class Recommender:
 
 			if count % 10000 == 0:
 				print("{} / {} [{}s]".format(count, len(scores_to_predict), round(time.time() - initial, 3)))
+			
 
 		print(str(round(time.time() - initial, 3)) + "s for weighted averages")
 
@@ -187,10 +192,25 @@ class Recommender:
 
 		return len(scores_to_predict), finalPredictions, len(scores_missed)
 
+	def suggest_queries(self, predictions):
+		
+		predictions = predictions.to_numpy().transpose()
+		suggestions = []
+
+		initial = time.time()
+		for q in range(len(predictions)):
+			suggestions.append((self.queriesIDs[q], np.nanmean(predictions[q]), self.tupleCount[q]))
+
+		suggestions.sort(key=lambda item: (item[1], item[2]), reverse=True)
+
+		print(str(round(time.time() - initial, 3)) + "s for queries suggestion")
+
+		return suggestions
+
 	def nan_average(self, values, weights):
 		weights = weights / SCALING_FACTOR
 		weightSum = ((~np.isnan(values)) * weights).sum()
-		return 0 if weightSum == 0 else np.nansum(values * weights) / weightSum
+		return 0.0 if weightSum == 0.0 else np.nansum(values * weights) / weightSum
 
 
 

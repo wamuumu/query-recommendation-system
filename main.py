@@ -37,6 +37,9 @@ if __name__ == "__main__":
 	print(usersIDs)'''
 
 	recommender = Recommender(users, queries, dataset, ratings)
+
+	# ----------- PART A ------------
+	print("\nPART A\n")
 	to_predict, predictions, missed = recommender.compute_scores()
 
 	print("\nINITIAL RATINGS [{} scores to predict]:".format(to_predict))	
@@ -45,13 +48,21 @@ if __name__ == "__main__":
 	print("\nFINAL PREDICTIONS [{} scores missed - {}%]:".format(missed, round(missed / to_predict, 2) * 100))	
 	print(predictions)
 
-	'''
-	csv_rows = finalPredictions.to_numpy().tolist()
+	csv_rows = predictions.to_numpy().tolist()
 	
-	for ind in range(len(list(finalPredictions.index.values))):
-		csv_rows[ind].insert(0, finalPredictions.index.values[ind])
+	for ind in range(len(list(predictions.index.values))):
+		csv_rows[ind].insert(0, predictions.index.values[ind])
 
-	generator.write_csv("output", finalPredictions.columns, csv_rows)
-	'''
+	generator.write_csv("output", predictions.columns, csv_rows)
+
+
+	# ----------- PART B ------------
+	print("\nPART B\n")
+	suggestions = recommender.suggest_queries(predictions)
+
+	print("\nSUGGESTIONS:")
+	print(suggestions)
 
 	exit(0)
+
+
