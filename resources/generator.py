@@ -8,11 +8,11 @@ import time
 import csv
 
 #constants
-MAX_DATA = 10000 #1000000
+MAX_DATA = 1000 #1000000
 MAX_QUERIES = 1000 #10000
 MAX_USERS = 1000 #100000
 MIN_ETA, MAX_ETA = 18, 95
-MIN_VOTE, MAX_VOTE = 60, 100
+MIN_VOTE, MAX_VOTE = 1, 100
 
 # data
 names = []

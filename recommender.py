@@ -2,8 +2,7 @@
 from lsh import LSH
 
 # clustering 
-from sklearn.cluster import KMeans
-from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import Birch
 from sklearn.preprocessing import StandardScaler
 
 # mathematical computations
@@ -30,9 +29,6 @@ pd.options.mode.chained_assignment = None
 # constants
 PERM = 120 # number of independent hash functions (e.g. 100) for computing signatures' matrix
 BAND = 40
-
-#QUERY_THRESH = 0.6
-#USER_THRESH = 0.5
 
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
@@ -173,9 +169,7 @@ class Recommender:
 
 		for i, j in candidates:
 			if not (empty_signatures[i] or empty_signatures[j]):
-				sim = round(1 - distance.cosine(signatures[i], signatures[j]), 3)
-
-				#if sim >= QUERY_THRESH:
+				sim = round(max(0, 1 - distance.cosine(signatures[i], signatures[j])), 3)
 
 				if not i in query_sim:
 					query_sim[i] = {}
@@ -209,37 +203,31 @@ class Recommender:
 		del signatures, empty_signatures
 		gc.collect()
 
+		print(query_sim)
+
 		return query_sim, available_query
 
 	def compute_userSimilarities(self):
 
 		MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
+		cluster_count = round(len(self.usersIDs) * 0.30)
 
 		initial = time.time()
 		
 		scaler = StandardScaler()
 		normScores = scaler.fit_transform(self.ratings)
-		
-		neighbors = NearestNeighbors(n_neighbors=20).fit(normScores)
-		distances, indices = neighbors.kneighbors(normScores)
-		distances = np.sort(distances, axis=0)
-		cluster_count = round(np.mean(distances[:,1]))
-		
+
+		model = Birch(n_clusters = cluster_count)
+		model.fit(normScores)
+		clusters = model.predict(normScores)
+
 		print("\nCluster count: {}, Total users: {}".format(cluster_count, len(self.usersIDs)))
 
 		print(str(round(time.time() - initial, 3)) + "s for data preparation")
-		
-		initial = time.time()
-
-		clusters = np.array(KMeans(n_clusters=cluster_count, init='random', n_init=10, max_iter=300).fit(normScores).labels_)
-
-		print(str(round(time.time() - initial, 3)) + "s for clustering")
 
 		initial = time.time()
 
 		user_sim = {}
-
-		print(clusters)
 
 		for i in clusters:
 			if not i in user_sim:
@@ -253,7 +241,7 @@ class Recommender:
 				user_sim[i]["indexes"] = np.where(clusters == i)[0]
 				user_sim[i]["values"] = np.around(cosine_similarity(c_scores), 3)
 				np.fill_diagonal(user_sim[i]["values"], 0)
-				#user_sim[i]["values"][user_sim[i]["values"] < USER_THRESH] = 0
+				user_sim[i]["values"][user_sim[i]["values"] < 0] = 0
 
 		top_users = {}
 
