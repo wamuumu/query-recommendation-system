@@ -1,57 +1,97 @@
+# query similarity
 from lsh import LSH
-from sklearn.metrics.pairwise import cosine_similarity
-from scipy.sparse import csr_matrix
 
+# clustering 
+from sklearn.cluster import KMeans
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import StandardScaler
+
+# mathematical computations
+from sklearn.metrics.pairwise import cosine_similarity
+from scipy.spatial import distance
+from scipy.sparse import csr_matrix
+from scipy.stats import pearsonr #alternative for pearson similarity: not working on matrix
+
+# dataframe to handle csv
+from datatable import dt, f
 import pandas as pd
+
+# general imports
 import numpy as np
+import matplotlib.pyplot as plt
+import itertools
+import collections
 import math
 import time
-import sys
+import gc
 
 pd.options.mode.chained_assignment = None 
 
-PERM = 100 #number of independent hash functions (e.g. 100) for computing signatures' matrix
-SCALING_FACTOR = 10000
+# constants
+PERM = 120 # number of independent hash functions (e.g. 100) for computing signatures' matrix
+BAND = 40
+
+#QUERY_THRESH = 0.6
+#USER_THRESH = 0.5
 
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
 DEFAULT_MEAN = 60
 
-features = ["name","address","age","occupation"]
-
 class Recommender:
 
-	def __init__(self, users, queries, dataset, ratings):
-		self.users = users.to_numpy()
+	def __init__(self, users, queries, queriesIDs, dataset, ratings):
+		self.allUsers = users.to_numpy()
+		self.usersIDs = list(itertools.chain.from_iterable(ratings['user'].to_numpy()))
+
 		self.queries = queries.to_numpy()
-		self.dataset = dataset
-		self.queriesIDs = list(ratings.columns)
-		self.usersIDs = list(ratings.index.values)
-		self.ratings = ratings.to_numpy()
+		self.queriesIDs = queriesIDs
+		
+		dataset[:] = dt.str32
+		self.datasetFeatures = list(dataset.names)[1::]
+		self.dataset = dataset.to_pandas()
 		self.tupleCount = {}
+		
+		ratings.replace({None: 0}) #replace NaN with 0
+		del ratings[:, ['user']] 
+		self.ratings = ratings.to_numpy()
 
 	def compute_shingles(self):
+
+		print("Dataset : {}, Total queries: {}".format(self.dataset.shape[0], len(self.queries)))
 
 		initial = time.time()
 
 		shingles_matrix = {}
 
+		count = 0
 		for q in range(len(self.queries)):
 
+			#query = ""
 			filteredDataset = self.dataset
-			for f in range(len(features)):
-				if self.queries[q][f] != "":
-					if self.queries[q][f].isdigit():
-						filteredDataset = filteredDataset[filteredDataset[features[f]] == int(self.queries[q][f])]
-					else:
-						filteredDataset = filteredDataset[filteredDataset[features[f]] == self.queries[q][f]]
-			
+			for ft in range(len(self.datasetFeatures)):
+				if self.queries[q][ft] != "":
+					filteredDataset = filteredDataset[filteredDataset[self.datasetFeatures[ft]] == self.queries[q][ft]]
+					#if query == "":
+						#query = self.datasetFeatures[ft] + '=="' + self.queries[q][ft] + '"'
+					#else:
+						#query += ' | ' + self.datasetFeatures[ft] + '=="' + self.queries[q][ft] + '"'
+
+			#filteredDataset = self.dataset.query(query, inplace=False)
+
 			self.tupleCount[q] = len(filteredDataset.index.values)
 
 			for ind in filteredDataset.index.values:
-				if not ind in shingles_matrix:
-					shingles_matrix[ind] = set()
-				shingles_matrix[ind].add(q)
+				if not ind in shingles_matrix.keys():
+					shingles_matrix[ind] = []
+				shingles_matrix[ind].append(q)	
+
+			count += 1
+
+			if count % 100 == 0:
+				print("{} / {} [{}s]".format(count, len(self.queries), round(time.time() - initial, 3)))
+
+		shingles_matrix = dict(collections.OrderedDict(sorted(shingles_matrix.items())))
 
 		print(str(round(time.time() - initial, 3)) + "s for shingles_matrix")
 		return shingles_matrix
@@ -60,13 +100,21 @@ class Recommender:
 		
 		shingles_matrix = self.compute_shingles()
 
+		print("\nPermutations: {}".format(PERM))
+
 		initial = time.time()
+		
+		drows, dcols = self.dataset.shape
+
+		queryList = set()
+		perm = [i for i in range(drows)]
 
 		sign_mat = np.empty((PERM, len(self.queries)))
 		sign_mat[:] = -1
 
-		queryList = set()
-		perm = np.arange(len(self.dataset))
+		empty_sign = [False] * len(self.queries)
+
+		count = 0
 
 		for i in range(PERM):
 			np.random.shuffle(perm)
@@ -75,109 +123,213 @@ class Recommender:
 			partition = np.argsort(perm)
 
 			while len(self.queries) != len(queryList) and len(partition) != 0:
-
 				index_min = partition[0]
 				if index_min in shingles_matrix:
-					
-					queryIndex = list(queryList.difference(shingles_matrix[index_min]))
-					sign_mat[i][queryIndex] = perm[index_min]
-					queryList.update(queryIndex)
-
+					for q in shingles_matrix[index_min]:
+						if not q in queryList:
+							queryList.add(q)
+							sign_mat[i][q] = perm[index_min]
 				partition = np.delete(partition, 0)
+
+			count += 1
+
+			if count % 10 == 0:
+				print("{} / {} [{}s]".format(count, PERM, round(time.time() - initial, 3)))
+
+		sign_mat = sign_mat.transpose() #get column, i.e. signature
+
+		for s in range(len(sign_mat)):
+			if np.all(sign_mat[s] == -1):
+				empty_sign[s] = True
+
+		del shingles_matrix
+		gc.collect()
 
 		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
 
-		return sign_mat.transpose() #get column, i.e. signature
+		return sign_mat, empty_sign
 
 	def compute_querySimilarities(self):
 
-		signatures = self.compute_signatures()
+		signatures, empty_signatures = self.compute_signatures()
+		
+		MAX_CANDIDATES = round(math.log(len(self.queries), 1.5))
+
+		print("\nMax query candidates: {}, Total queries: {}".format(MAX_CANDIDATES, len(self.queries)))
 
 		initial = time.time()
 		
-		# SPARSE MATRIX APPROACH 43.6s
-		sig_sparse = csr_matrix(signatures)
-		query_sim = cosine_similarity(sig_sparse)
+		lsh = LSH(BAND)
 
-		#QUERY_THRESH = np.percentile(query_sim, 97)
+		for sig in signatures:
+			lsh.compute_buckets(sig)
 
-		#query_sim[query_sim < QUERY_THRESH] = 0
-		query_sim = np.array(query_sim * SCALING_FACTOR, dtype='int16')
-		np.fill_diagonal(query_sim, 0)
+		candidates = lsh.get_candidates(signatures)
 
-		CANDIDATES = round(math.log(len(self.queries), 1.5))
-		top_query = {}
+		print("Candidates pair: {}".format(len(candidates)))
 
-		for i in range(len(query_sim)):	
-			if all(s == -1 for s in signatures[i]):
-				query_sim[i] = 0
-				query_sim[:,i] = 0
+		query_sim = {}
+		available_query = [False] * len(self.queries)
 
-			top_query[i] = np.argsort(query_sim[i])[::-1][0:CANDIDATES]
+		for i, j in candidates:
+			if not (empty_signatures[i] or empty_signatures[j]):
+				sim = round(1 - distance.cosine(signatures[i], signatures[j]), 3)
+
+				#if sim >= QUERY_THRESH:
+
+				if not i in query_sim:
+					query_sim[i] = {}
+					query_sim[i]['indexes'] = []
+					query_sim[i]['values'] = []
+				
+				if not j in query_sim:
+					query_sim[j] = {}
+					query_sim[j]['indexes'] = []
+					query_sim[j]['values'] = []
+				
+				query_sim[i]['indexes'].append(j)
+				query_sim[i]['values'].append(sim)
+
+				query_sim[j]['indexes'].append(i)
+				query_sim[j]['values'].append(sim)
+
+				available_query[i] = True
+				available_query[j] = True
+
+		query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
+
+		for i in query_sim.keys():
+			ind = np.argsort(query_sim[i]["values"])[::-1][0:MAX_CANDIDATES]
+
+			query_sim[i]["indexes"] = np.array(query_sim[i]["indexes"])[ind]
+			query_sim[i]["values"] = np.array(query_sim[i]["values"])[ind]
 
 		print(str(round(time.time() - initial, 3)) + "s for queries_similarity")
-		return query_sim, top_query
+
+		del signatures, empty_signatures
+		gc.collect()
+
+		return query_sim, available_query
 
 	def compute_userSimilarities(self):
 
+		MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
+
+		initial = time.time()
+		
+		scaler = StandardScaler()
+		normScores = scaler.fit_transform(self.ratings)
+		
+		neighbors = NearestNeighbors(n_neighbors=20).fit(normScores)
+		distances, indices = neighbors.kneighbors(normScores)
+		distances = np.sort(distances, axis=0)
+		cluster_count = round(np.mean(distances[:,1]))
+		
+		print("\nCluster count: {}, Total users: {}".format(cluster_count, len(self.usersIDs)))
+
+		print(str(round(time.time() - initial, 3)) + "s for data preparation")
+		
 		initial = time.time()
 
-		norm = np.copy(self.ratings)
-		norm[np.isnan(norm)] = 0
+		clusters = np.array(KMeans(n_clusters=cluster_count, init='random', n_init=10, max_iter=300).fit(normScores).labels_)
 
-		user_sim = np.corrcoef(norm)
+		print(str(round(time.time() - initial, 3)) + "s for clustering")
 
-		#USER_THRESH = np.percentile(user_sim, 97)
+		initial = time.time()
 
-		#user_sim[user_sim < USER_THRESH] = 0
-		user_sim = np.array(user_sim * SCALING_FACTOR, dtype='int16')
-		np.fill_diagonal(user_sim, 0)
+		user_sim = {}
 
-		CANDIDATES = round(math.log(len(self.users), 1.5))
+		print(clusters)
+
+		for i in clusters:
+			if not i in user_sim:
+				user_sim[i] = {}
+				c_scores = np.array(self.ratings[clusters == i])
+
+				for s in range(len(c_scores)):
+					mean = np.mean(c_scores[s][c_scores[s] != 0])
+					c_scores[s][c_scores[s] != 0] = c_scores[s][c_scores[s] != 0] - mean
+
+				user_sim[i]["indexes"] = np.where(clusters == i)[0]
+				user_sim[i]["values"] = np.around(cosine_similarity(c_scores), 3)
+				np.fill_diagonal(user_sim[i]["values"], 0)
+				#user_sim[i]["values"][user_sim[i]["values"] < USER_THRESH] = 0
+
 		top_users = {}
 
-		for i in range(len(self.users)):
-			top_users[i] = np.argsort(user_sim[i])[::-1][0:CANDIDATES]
+		for i in range(len(self.usersIDs)):
+			clusterID = clusters[i]
+			userID = np.where(user_sim[clusterID]["indexes"] == i)
+			userID = userID[0][0] if len(userID) == 1 else -1
+			if userID != -1:
+				top_users[i] = np.argsort(user_sim[clusterID]["values"][userID])[::-1][0:MAX_CANDIDATES]
+			else:
+				top_users[i] = []
 
 		print(str(round(time.time() - initial, 3)) + "s for users_similarity")
-		
-		return user_sim, top_users
+
+		return user_sim, top_users, clusters
 
 	def compute_scores(self):
 
-		querySimilarities, topQueryIndexes = self.compute_querySimilarities()
-		userSimilarities, topUserIndexes = self.compute_userSimilarities()
+		#lot of memory usage because of precomputation of all similarities
+		#querySimilarities, topQueryIndexes = self.compute_querySimilarities()
+		querySimilarities, available_query = self.compute_querySimilarities()
+		userSimilarities, topUserIndexes, clusters = self.compute_userSimilarities()
 
-		scores_to_predict = np.array(np.where(np.isnan(self.ratings))).transpose()
+		scores_to_predict = np.array(np.where(self.ratings == 0)).transpose()
+
+		print(scores_to_predict)
 
 		queryPrediction = 0
 		userPrediction = 0
-		finalPredictions = np.copy(self.ratings)
 
 		initial = time.time()
 
 		count = 0
+
 		for i, j in scores_to_predict:
 
-			# COLLABORATIVE FILTERING QUERY-QUERY
-			userRating = np.array(self.ratings[i][topQueryIndexes[j]])
-			simScores = np.array(querySimilarities[j][topQueryIndexes[j]])
-			queryPrediction = self.nan_average(userRating, simScores)
+			# COLLABORATIVE FILTERING QUERY-QUERY 
+			if available_query[j]:
+				userRating = np.array(self.ratings[i][querySimilarities[j]["indexes"]])
+				simScores = np.array(querySimilarities[j]["values"])
+				simScores[userRating == 0] = 0
+				weightSum = np.sum(simScores)
+
+				if weightSum == 0:
+					queryPrediction = 0
+				else:
+					queryPrediction = np.sum(userRating * simScores) / weightSum
+			else:
+				queryPrediction = 0
 
 			# COLLABORATIVE FILTERING USER-USER
-			userRating = np.array(self.ratings.transpose()[j][topUserIndexes[i]])
-			simScores = np.array(userSimilarities[i][topUserIndexes[i]])
-			userPrediction = self.nan_average(userRating, simScores)
+			if len(topUserIndexes[i]) > 0:
+				clusterID = clusters[i]
+				userID = list(userSimilarities[clusterID]["indexes"]).index(i)
+				userRating = np.array(self.ratings.transpose()[j][topUserIndexes[i]])
+				simScores = np.array(userSimilarities[clusterID]["values"][userID][topUserIndexes[i]])
+				simScores[userRating == 0] = 0
+				weightSum = np.sum(simScores)
+
+				if weightSum == 0:
+					userPrediction = 0
+				else:
+					userPrediction = np.sum(userRating * simScores) / weightSum
+			else:
+				userPrediction = 0
 
 			# HYBRID PREDICTIONS
+			#print(userPrediction, queryPrediction)
 			if userPrediction == 0 and queryPrediction == 0:
-				finalPredictions[i][j] = np.nan #cannot find a predictable value
+				self.ratings[i][j] = 0 #cannot find a predictable value
 			elif userPrediction == 0:
-				finalPredictions[i][j] = round(queryPrediction * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
+				self.ratings[i][j] = round(queryPrediction * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
 			elif queryPrediction == 0:
-				finalPredictions[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
+				self.ratings[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
 			else:
-				finalPredictions[i][j] = round(queryPrediction * QUERY_WEIGHT + userPrediction * USER_WEIGHT)
+				self.ratings[i][j] = round(queryPrediction * QUERY_WEIGHT + userPrediction * USER_WEIGHT)
 
 			count += 1
 
@@ -187,8 +339,8 @@ class Recommender:
 
 		print(str(round(time.time() - initial, 3)) + "s for weighted averages")
 
-		finalPredictions = pd.DataFrame(finalPredictions, columns = self.queriesIDs, index = self.usersIDs)
-		scores_missed = np.array(np.where(np.asanyarray(np.isnan(finalPredictions)))).transpose()
+		finalPredictions = pd.DataFrame(self.ratings, columns = self.queriesIDs, index = self.usersIDs)
+		scores_missed = np.array(np.where(finalPredictions == 0)).transpose()
 
 		return len(scores_to_predict), finalPredictions, len(scores_missed)
 
@@ -206,11 +358,6 @@ class Recommender:
 		print(str(round(time.time() - initial, 3)) + "s for queries suggestion")
 
 		return suggestions
-
-	def nan_average(self, values, weights):
-		weights = weights / SCALING_FACTOR
-		weightSum = ((~np.isnan(values)) * weights).sum()
-		return 0.0 if weightSum == 0.0 else np.nansum(values * weights) / weightSum
 
 
 

@@ -1,6 +1,0 @@
-Studente
-Lavoratore
-Fabbro
-Operaio
-Commesso
-Allenatore

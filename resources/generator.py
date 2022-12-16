@@ -1,38 +1,39 @@
-import sys
-import random
-import csv
-import string
+from datatable import dt, f
 import pandas as pd
+
 import numpy as np
+import random
+import string
 import time
+import csv
 
 #constants
-MAX_DATA = 1000
-MAX_QUERIES = 100
-MAX_USERS = 100
-MIN_ETA, MAX_ETA = 20, 30
-MIN_VOTE, MAX_VOTE = 20, 100
+MAX_DATA = 10000 #1000000
+MAX_QUERIES = 1000 #10000
+MAX_USERS = 1000 #100000
+MIN_ETA, MAX_ETA = 18, 95
+MIN_VOTE, MAX_VOTE = 60, 100
 
-#arrays of data
+# data
 names = []
 addresses = []
 occupations = []
 
 random.seed(time.time())
 
-features = ["name","address","age","occupation"]
+allowed_features = ["name","address","age","occupation"]
 
 def get_data():
 
 	global names, addresses, occupations
 
-	with open("./old_input/names.txt") as file:
+	with open("./input/names.txt") as file:
 		names = [line.strip() for line in file]
 
-	with open("./old_input/addresses.txt") as file:
+	with open("./input/addresses.txt") as file:
 		addresses = [line.strip() for line in file]
 
-	with open("./old_input/occupations.txt") as file:
+	with open("./input/occupations.txt") as file:
 		occupations = [line.strip() for line in file]
 
 	#print("names: " + str(len(names)))
@@ -104,40 +105,58 @@ def create_queries():
 
 	print("Generating queries...")
 
+	dataset = dt.fread("./output/dataset.csv")
+	dataset[:] = dt.str32
+	dataset = dataset.to_pandas()
+
 	data = set()
+
+	initial = time.time()
 
 	while len(data) < MAX_QUERIES:
 
 		queryID = "Q" + str(len(data) + 1)
 
-		randomID, randomName, randomAddress, randomAge, randomOccupation = None, None, None, None, None #attributes that haven't been picked yet
-
-		'''choice = random.randint(0, 1) #try to pick id for query
-		if choice == 1:
-			randomID = "id=" + str(random.randint(1, MAX_DATA))'''
+		randomName, randomAddress, randomAge, randomOccupation = None, None, None, None #attributes that haven't been picked yet
+		query = []
 
 		choice = random.randint(0, 1) #try to pick name for query
 		if choice == 1:
-			randomName = "name=" + names[random.randint(0, len(names) - 1)]
+			tmp = names[random.randint(0, len(names) - 1)]
+			randomName = "name=" + tmp
+			query.append('name=="' + tmp + '"')
 
 		choice = random.randint(0, 1) #try to pick address for query
 		if choice == 1:
-			randomAddress = "address=" + addresses[random.randint(0, len(addresses) - 1)]
+			tmp = addresses[random.randint(0, len(addresses) - 1)]
+			randomAddress = "address=" + tmp
+			query.append('address=="' + tmp + '"')
 
 		choice = random.randint(0, 1) #try to pick age for query
 		if choice == 1:
-			randomAge = "age=" + str(random.randint(MIN_ETA, MAX_ETA))
+			tmp = str(random.randint(MIN_ETA, MAX_ETA))
+			randomAge = "age=" + tmp 
+			query.append('age=="' + tmp + '"')
 
 		choice = random.randint(0, 1) #try to pick occupation for query
 		if choice == 1:
-			randomOccupation = "occupation=" + occupations[random.randint(0, len(occupations) - 1)]
+			tmp = occupations[random.randint(0, len(occupations) - 1)]
+			randomOccupation = "occupation=" + tmp
+			query.append('occupation=="' + tmp + '"')
 
-		item = (queryID, randomID, randomName, randomAddress, randomAge, randomOccupation)
+		item = (queryID, randomName, randomAddress, randomAge, randomOccupation)
 
-		if (randomID == None and randomName == None and randomAddress == None and randomAge == None and randomOccupation == None):
+		if (randomName == None and randomAddress == None and randomAge == None and randomOccupation == None):
 			continue
 		else:
-			data.add(item)
+			query = " and ".join(query)
+			filteredDataset = dataset.query(query)
+
+			if len(filteredDataset.index.values) > 0:
+				data.add(item)
+				print("{} / {} [{}s]".format(len(data), MAX_QUERIES, round(time.time() - initial, 3)))
+			else:
+				continue
 
 	data = [tuple(attr for attr in item if attr is not None) for item in data] #remove from all queries those attributes with no value
 
@@ -161,34 +180,39 @@ def parse_queries(path:str):
 			indexes.append(values[0])
 			values = values[1::]
 
-			element = ["" for i in range(len(features))]
+			element = ["" for i in range(len(allowed_features))]
 
 			for val in values:
 				attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
-				ind = features.index(attr[0])
+				ind = allowed_features.index(attr[0])
 				element[ind] = attr[1]
 
 			data.append(element)
 
 	data = np.array(data).transpose()
 
-	for i in range(len(features)):
-		pdict[features[i]] = data[i] 
+	for i in range(len(allowed_features)):
+		pdict[allowed_features[i]] = data[i] 
 
-	return pd.DataFrame(pdict, index = indexes)
+	return dt.Frame(pdict), indexes
 
 def create_matrix():
 	
 	print("Generating partial utility matrix...")
 
-	users = pd.read_csv("./output/users.csv", names = ["id"], header = None, engine="pyarrow")['id'].to_numpy()
-	queries = parse_queries("./output/queries.csv").index.values
+	users = dt.fread("./output/users.csv", header=False).to_numpy()
+	queries, queriesIDs = parse_queries("./output/queries.csv")
 
-	randomScores = np.random.randint(low=MIN_VOTE, high=MAX_VOTE, size=( len(users), len(queries))).astype('O')
+	randomScores = np.random.randint(low=MIN_VOTE, high=MAX_VOTE, size=( len(users), len(queriesIDs))).astype('O')
+	print("random scores generated")
 	mask = np.random.randint(0, 5, size=randomScores.shape).astype(bool)
+	print("mask generated")
 	randomScores[np.logical_not(mask)] = ""
+	print("mask applied")
 
-	write_csv("utility_matrix", queries, randomScores)
+	randomScores = np.concatenate((users, randomScores), axis=1)
+
+	write_csv("utility_matrix", queriesIDs, randomScores)
 
 	print("Partial utility matrix created and saved in /output/utility_matrix.csv")
 

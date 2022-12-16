@@ -1,4 +1,0 @@
---- PARTE B (raccomandazione globale) ---
-Assegnare ad ogni tupla di ogni query uno score, 
-per poi andare a prendere tutte quelle query che 
-hanno score overall più alti 

@@ -1,53 +1,48 @@
 from recommender import Recommender
 from resources import generator
+from datatable import dt
 #from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
-import pandas as pd
-import math, time
-import numpy as np
+import time
+import gc
 
-pd.options.mode.chained_assignment = None 
 
 if __name__ == "__main__":
 
+	# Fetch initial data 
+
 	initial = time.time()
-	users = pd.read_csv("./resources/output/users.csv", names = ["id"], header = None, engine="pyarrow", dtype = {'id':'category'})
+	users = dt.fread("./resources/output/users.csv", header=False)
 	print(str(round(time.time() - initial, 3)) + "s to read users")
 
 	initial = time.time()
-	queries = generator.parse_queries("./resources/output/queries.csv").astype({'name':'category', 'address':'category', 'occupation':'category'})
+	queries, queriesIDs = generator.parse_queries("./resources/output/queries.csv")
 	print(str(round(time.time() - initial, 3)) + "s to read queries")
 
 	initial = time.time()
-	dataset = pd.read_csv("./resources/output/dataset.csv", names = ["id","name","address","age","occupation"], header = 0, engine="pyarrow", dtype = {'name':'category', 'address':'category', 'occupation':'category'})
+	dataset = dt.fread("./resources/output/dataset.csv")
 	print(str(round(time.time() - initial, 3)) + "s to read dataset")
 
 	initial = time.time()
-	ratings = pd.read_csv("./resources/output/utility_matrix.csv", engine="pyarrow")
+	cols = ["user"] + queriesIDs 
+	ratings = dt.fread("./resources/output/utility_matrix.csv", columns=cols)
 	print(str(round(time.time() - initial, 3)) + "s to read utility matrix")
 
-	queriesIDs = list(ratings.columns)
-	usersIDs = list(ratings.index.values)
+	# Reccomender class to predict values
+	recommender = Recommender(users, queries, queriesIDs, dataset, ratings)
 
-	'''print(users)
-	print(dataset)
-	print(ratings)
-	
-	print(queriesIDs)
-	print(usersIDs)'''
-
-	recommender = Recommender(users, queries, dataset, ratings)
+	del users, queries, dataset, ratings
+	gc.collect()
 
 	# ----------- PART A ------------
 	print("\nPART A\n")
 	to_predict, predictions, missed = recommender.compute_scores()
 
-	print("\nINITIAL RATINGS [{} scores to predict]:".format(to_predict))	
-	print(ratings)
-
-	print("\nFINAL PREDICTIONS [{} scores missed - {}%]:".format(missed, round(missed / to_predict, 2) * 100))	
+	print("\nFINAL PREDICTIONS [{} scores to predict, {} scores missed - {}% miss]:".format(to_predict, missed, round(missed / to_predict, 3) * 100))	
 	print(predictions)
 
+	# Save prediction in csv file using generator csv writer
+	
 	csv_rows = predictions.to_numpy().tolist()
 	
 	for ind in range(len(list(predictions.index.values))):
@@ -57,11 +52,13 @@ if __name__ == "__main__":
 
 
 	# ----------- PART B ------------
+	'''
 	print("\nPART B\n")
 	suggestions = recommender.suggest_queries(predictions)
 
 	print("\nSUGGESTIONS:")
 	print(suggestions)
+	'''
 
 	exit(0)
 
