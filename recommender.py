@@ -3,6 +3,7 @@ from lsh import LSH
 
 # clustering 
 from sklearn.cluster import Birch
+from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 # mathematical computations
@@ -78,16 +79,16 @@ class Recommender:
 			self.tupleCount[q] = len(filteredDataset.index.values)
 
 			for ind in filteredDataset.index.values:
-				if not ind in shingles_matrix.keys():
+				if not ind in shingles_matrix:
 					shingles_matrix[ind] = []
 				shingles_matrix[ind].append(q)	
 
 			count += 1
 
-			if count % 100 == 0:
+			if count % 2000 == 0:
 				print("{} / {} [{}s]".format(count, len(self.queries), round(time.time() - initial, 3)))
 
-		shingles_matrix = dict(collections.OrderedDict(sorted(shingles_matrix.items())))
+		#shingles_matrix = dict(collections.OrderedDict(sorted(shingles_matrix.items())))
 
 		print(str(round(time.time() - initial, 3)) + "s for shingles_matrix")
 		return shingles_matrix
@@ -103,17 +104,14 @@ class Recommender:
 		drows, dcols = self.dataset.shape
 
 		queryList = set()
-		perm = [i for i in range(drows)]
 
 		sign_mat = np.empty((PERM, len(self.queries)))
 		sign_mat[:] = -1
 
-		empty_sign = [False] * len(self.queries)
-
 		count = 0
 
 		for i in range(PERM):
-			np.random.shuffle(perm)
+			perm = np.random.permutation(drows)
 			queryList.clear()
 
 			partition = np.argsort(perm)
@@ -134,20 +132,16 @@ class Recommender:
 
 		sign_mat = sign_mat.transpose() #get column, i.e. signature
 
-		for s in range(len(sign_mat)):
-			if np.all(sign_mat[s] == -1):
-				empty_sign[s] = True
-
 		del shingles_matrix
 		gc.collect()
 
 		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
 
-		return sign_mat, empty_sign
+		return sign_mat
 
 	def compute_querySimilarities(self):
 
-		signatures, empty_signatures = self.compute_signatures()
+		signatures = self.compute_signatures()
 		
 		MAX_CANDIDATES = round(math.log(len(self.queries), 1.5))
 
@@ -168,29 +162,28 @@ class Recommender:
 		available_query = [False] * len(self.queries)
 
 		for i, j in candidates:
-			if not (empty_signatures[i] or empty_signatures[j]):
-				sim = round(max(0, 1 - distance.cosine(signatures[i], signatures[j])), 3)
+			sim = round(max(0, 1 - distance.cosine(signatures[i], signatures[j])), 3)
 
-				if not i in query_sim:
-					query_sim[i] = {}
-					query_sim[i]['indexes'] = []
-					query_sim[i]['values'] = []
-				
-				if not j in query_sim:
-					query_sim[j] = {}
-					query_sim[j]['indexes'] = []
-					query_sim[j]['values'] = []
-				
-				query_sim[i]['indexes'].append(j)
-				query_sim[i]['values'].append(sim)
+			if not i in query_sim:
+				query_sim[i] = {}
+				query_sim[i]['indexes'] = []
+				query_sim[i]['values'] = []
+			
+			if not j in query_sim:
+				query_sim[j] = {}
+				query_sim[j]['indexes'] = []
+				query_sim[j]['values'] = []
+			
+			query_sim[i]['indexes'].append(j)
+			query_sim[i]['values'].append(sim)
 
-				query_sim[j]['indexes'].append(i)
-				query_sim[j]['values'].append(sim)
+			query_sim[j]['indexes'].append(i)
+			query_sim[j]['values'].append(sim)
 
-				available_query[i] = True
-				available_query[j] = True
+			available_query[i] = True
+			available_query[j] = True
 
-		query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
+		#query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
 
 		for i in query_sim.keys():
 			ind = np.argsort(query_sim[i]["values"])[::-1][0:MAX_CANDIDATES]
@@ -198,32 +191,41 @@ class Recommender:
 			query_sim[i]["indexes"] = np.array(query_sim[i]["indexes"])[ind]
 			query_sim[i]["values"] = np.array(query_sim[i]["values"])[ind]
 
-		print(str(round(time.time() - initial, 3)) + "s for queries_similarity")
+		print(str(round(time.time() - initial, 3)) + "s for queries_similarity scores")
 
-		del signatures, empty_signatures
+		del signatures
 		gc.collect()
-
-		print(query_sim)
 
 		return query_sim, available_query
 
 	def compute_userSimilarities(self):
 
 		MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
-		cluster_count = round(len(self.usersIDs) * 0.30)
+		cluster_count = round(len(self.usersIDs) ** (1 / 1.75))
 
 		initial = time.time()
-		
-		scaler = StandardScaler()
-		normScores = scaler.fit_transform(self.ratings)
+			
+		scores = np.array(self.ratings)
 
-		model = Birch(n_clusters = cluster_count)
-		model.fit(normScores)
-		clusters = model.predict(normScores)
+		for s in range(len(scores)):
+			mean = np.mean(scores[s][scores[s] != 0])
+			scores[s][scores[s] == 0] = mean
+
+		scaler = StandardScaler()
+		normScores = scaler.fit_transform(scores)
+
+		r, c = normScores.shape
+		n_comps = round(max(10, c * 0.1))
+
+		normScores = PCA(n_components = n_comps).fit_transform(normScores)
+
+		print(str(round(time.time() - initial, 3)) + "s for normalization and pca")
 
 		print("\nCluster count: {}, Total users: {}".format(cluster_count, len(self.usersIDs)))
+		
+		clusters = Birch(n_clusters = cluster_count).fit(normScores).predict(normScores)
 
-		print(str(round(time.time() - initial, 3)) + "s for data preparation")
+		print(str(round(time.time() - initial, 3)) + "s for clustering")
 
 		initial = time.time()
 
@@ -254,20 +256,20 @@ class Recommender:
 			else:
 				top_users[i] = []
 
-		print(str(round(time.time() - initial, 3)) + "s for users_similarity")
+		print(str(round(time.time() - initial, 3)) + "s for users_similarity scores")
 
 		return user_sim, top_users, clusters
 
 	def compute_scores(self):
 
-		#lot of memory usage because of precomputation of all similarities
-		#querySimilarities, topQueryIndexes = self.compute_querySimilarities()
+		toc = time.time()
 		querySimilarities, available_query = self.compute_querySimilarities()
+		print(str(round(time.time() - toc, 3)) + "s for queries_similarity")
+		
 		userSimilarities, topUserIndexes, clusters = self.compute_userSimilarities()
+		print(str(round(time.time() - toc, 3)) + "s for users_similarity")
 
 		scores_to_predict = np.array(np.where(self.ratings == 0)).transpose()
-
-		print(scores_to_predict)
 
 		queryPrediction = 0
 		userPrediction = 0
@@ -309,7 +311,6 @@ class Recommender:
 				userPrediction = 0
 
 			# HYBRID PREDICTIONS
-			#print(userPrediction, queryPrediction)
 			if userPrediction == 0 and queryPrediction == 0:
 				self.ratings[i][j] = 0 #cannot find a predictable value
 			elif userPrediction == 0:
@@ -330,7 +331,45 @@ class Recommender:
 		finalPredictions = pd.DataFrame(self.ratings, columns = self.queriesIDs, index = self.usersIDs)
 		scores_missed = np.array(np.where(finalPredictions == 0)).transpose()
 
-		return len(scores_to_predict), finalPredictions, len(scores_missed)
+		return scores_to_predict, finalPredictions, scores_missed
+
+	def top_k_queries(self, to_predict, predictions, missed):
+
+		command = ""
+		user = ""
+		k = ""
+
+		predictions = predictions.to_numpy()
+
+		while command != "no":
+			while True:
+				user = input("Enter user ID: [int][Max: " + str(len(self.usersIDs)) + "] ")
+				if user.isdigit():
+					user = int(user) - 1
+					if user >= 0 and user < len(self.usersIDs):
+						break
+
+			just_scored = [j for i, j in to_predict if i == user]
+
+			while True:
+				k = input("Enter number of recommendations: [int][Max: " + str(len(just_scored)) + "] ")
+				if k.isdigit():
+					k = int(k)
+					if k > 0 and k <= len(just_scored):
+						break
+
+			top_k_predictions = np.argsort(predictions[user][just_scored])[::-1][0:k]
+
+			print("\nTop {} recommendations for U{}: ". format(k, user+1))
+			for i in range(len(top_k_predictions)):
+				print("{}. Q{} - {}".format(i+1, just_scored[top_k_predictions[i]] + 1, predictions[user][just_scored][top_k_predictions[i]]))
+			print()
+
+			command = ""
+			while not command.lower() in ["yes", "no"]:
+				command = input("Do you want more suggestions? [Yes-No][Default: Yes] ")
+				if command == "":
+					command = "yes"
 
 	def suggest_queries(self, predictions):
 		

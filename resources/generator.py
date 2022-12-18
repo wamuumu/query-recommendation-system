@@ -9,8 +9,8 @@ import csv
 
 #constants
 MAX_DATA = 1000 #1000000
-MAX_QUERIES = 1000 #10000
-MAX_USERS = 1000 #100000
+MAX_QUERIES = 100 #10000
+MAX_USERS = 100 #100000
 MIN_ETA, MAX_ETA = 18, 95
 MIN_VOTE, MAX_VOTE = 1, 100
 
@@ -172,9 +172,11 @@ def parse_queries(path:str):
 	data = []
 	indexes = []
 	pdict = {}
+	lineCount = 0
 
 	with open(path) as f:
 		for row in f:
+			lineCount += 1
 			row = row.rstrip('\n')
 			values = row.split(",")
 			indexes.append(values[0])
@@ -189,13 +191,14 @@ def parse_queries(path:str):
 
 			data.append(element)
 
-	data = np.array(data).transpose()
+	if lineCount > 0:
+		data = np.array(data).transpose()
 
-	for i in range(len(allowed_features)):
-		pdict[allowed_features[i]] = data[i] 
+		for i in range(len(allowed_features)):
+			pdict[allowed_features[i]] = data[i] 
 
 	return dt.Frame(pdict), indexes
-
+	
 def create_matrix():
 	
 	print("Generating partial utility matrix...")
