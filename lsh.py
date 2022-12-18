@@ -59,7 +59,7 @@ class LSH:
 							candidates.add(c)
 			
 			count += 1
-			print("{} / {} [{}s] - MaxLen of buckets: {}, Max combinations: {}".format(count, len(self.buckets), round(time.time() - initial, 3), maxlen, maxval))
+			#print("{} / {} [{}s] - MaxLen of buckets: {}, Max combinations: {}".format(count, len(self.buckets), round(time.time() - initial, 3), maxlen, maxval))
 
 		return candidates
 

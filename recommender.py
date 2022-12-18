@@ -12,7 +12,7 @@ from scipy.spatial import distance
 from scipy.sparse import csr_matrix
 from scipy.stats import pearsonr #alternative for pearson similarity: not working on matrix
 
-# dataframe to handle csv
+# dataframes to handle csv
 from datatable import dt, f
 import pandas as pd
 
@@ -29,7 +29,7 @@ pd.options.mode.chained_assignment = None
 
 # constants
 PERM = 120 # number of independent hash functions (e.g. 100) for computing signatures' matrix
-BAND = 40
+BAND = 40 # number of bands in a signature
 
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
@@ -147,6 +147,8 @@ class Recommender:
 
 		print("\nMax query candidates: {}, Total queries: {}".format(MAX_CANDIDATES, len(self.queries)))
 
+		# ================================= LSH =================================
+
 		initial = time.time()
 		
 		lsh = LSH(BAND)
@@ -157,6 +159,10 @@ class Recommender:
 		candidates = lsh.get_candidates(signatures)
 
 		print("Candidates pair: {}".format(len(candidates)))
+
+		# ================ COSINE SIMILARITY BETWEEN CANDIDATES =================
+
+		initial = time.time()
 
 		query_sim = {}
 		available_query = [False] * len(self.queries)
@@ -201,7 +207,11 @@ class Recommender:
 	def compute_userSimilarities(self):
 
 		MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
-		cluster_count = round(len(self.usersIDs) ** (1 / 1.75))
+		CLUSTER_COUNT = round(len(self.usersIDs) ** (1 / 1.75))
+
+		print("\nMax user candidates: {}, Total users: {}".format(MAX_CANDIDATES, len(self.usersIDs)))
+
+		# ============================== DATA PROCESSING ==============================
 
 		initial = time.time()
 			
@@ -215,17 +225,25 @@ class Recommender:
 		normScores = scaler.fit_transform(scores)
 
 		r, c = normScores.shape
-		n_comps = round(max(10, c * 0.1))
+		n_comps = min(c, 100) # common heuristic for SVD and PCA
 
 		normScores = PCA(n_components = n_comps).fit_transform(normScores)
 
-		print(str(round(time.time() - initial, 3)) + "s for normalization and pca")
+		print(str(round(time.time() - initial, 3)) + "s for normalization and PCA")
 
-		print("\nCluster count: {}, Total users: {}".format(cluster_count, len(self.usersIDs)))
+
+		# ================================== CLUSTERING ==================================
+
+		print("\nCluster count: {}, Total users: {}".format(CLUSTER_COUNT, len(self.usersIDs)))
 		
-		clusters = Birch(n_clusters = cluster_count).fit(normScores).predict(normScores)
+		initial = time.time()
+		
+		clusters = Birch(n_clusters = CLUSTER_COUNT).fit(normScores).predict(normScores)
 
 		print(str(round(time.time() - initial, 3)) + "s for clustering")
+
+
+		# ====================== CENTERED COSINE SIMILARITY BETWEEN CLUSTER ======================
 
 		initial = time.time()
 
@@ -262,13 +280,13 @@ class Recommender:
 
 	def compute_scores(self):
 
-		toc = time.time()
+		print("\nQUERY SIMILARITY")
 		querySimilarities, available_query = self.compute_querySimilarities()
-		print(str(round(time.time() - toc, 3)) + "s for queries_similarity")
 		
+		print("\nUSER SIMILARITY")
 		userSimilarities, topUserIndexes, clusters = self.compute_userSimilarities()
-		print(str(round(time.time() - toc, 3)) + "s for users_similarity")
 
+		print("\nWEIGHTED AVERAGES")
 		scores_to_predict = np.array(np.where(self.ratings == 0)).transpose()
 
 		queryPrediction = 0
@@ -370,6 +388,11 @@ class Recommender:
 				command = input("Do you want more suggestions? [Yes-No][Default: Yes] ")
 				if command == "":
 					command = "yes"
+
+
+
+
+	# PART B of ASSIGNMENT [Theorical]
 
 	def suggest_queries(self, predictions):
 		

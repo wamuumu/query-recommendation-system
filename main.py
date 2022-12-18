@@ -59,8 +59,8 @@ if __name__ == "__main__":
 	del users, queries, dataset, ratings
 	gc.collect()
 
-	# ----------- PART A ------------
-	print("\nPART A\n")
+	# =========================== PART A ===========================
+
 	to_predict, predictions, missed = recommender.compute_scores()
 
 	print("\nFINAL PREDICTIONS [{} scores to predict, {} scores missed - {}% miss]:".format(len(to_predict), len(missed), round(len(missed) / len(to_predict), 3) * 100))	
@@ -76,15 +76,6 @@ if __name__ == "__main__":
 	generator.write_csv("output", predictions.columns, csv_rows)
 
 	recommender.top_k_queries(to_predict, predictions, missed)
-
-	# ----------- PART B ------------
-	'''
-	print("\nPART B\n")
-	suggestions = recommender.suggest_queries(predictions)
-
-	print("\nSUGGESTIONS:")
-	print(suggestions)
-	'''
 
 	exit(0)
 
