@@ -55,11 +55,16 @@ class Recommender:
 
 	def compute_shingles(self):
 
-		print("Dataset : {}, Total queries: {}".format(self.dataset.shape[0], len(self.queries)))
+		drows, dcols =self.dataset.shape
+
+		print("Dataset : {}, Total queries: {}".format(drows, len(self.queries)))
 
 		initial = time.time()
 
 		shingles_matrix = {}
+
+		for d in range(drows):
+			shingles_matrix[d] = []
 
 		count = 0
 		for q in range(len(self.queries)):
@@ -79,13 +84,11 @@ class Recommender:
 			self.tupleCount[q] = len(filteredDataset.index.values)
 
 			for ind in filteredDataset.index.values:
-				if not ind in shingles_matrix:
-					shingles_matrix[ind] = []
-				shingles_matrix[ind].append(q)	
+				shingles_matrix[ind].append(q)
 
 			count += 1
 
-			if count % 2000 == 0:
+			if count % round(len(self.queries) * 0.1) == 0:
 				print("{} / {} [{}s]".format(count, len(self.queries), round(time.time() - initial, 3)))
 
 		#shingles_matrix = dict(collections.OrderedDict(sorted(shingles_matrix.items())))
@@ -103,22 +106,19 @@ class Recommender:
 		
 		drows, dcols = self.dataset.shape
 
-		queryList = set()
+		sign_mat = np.full((PERM, len(self.queries)), -1, dtype='int64')
 
-		sign_mat = np.empty((PERM, len(self.queries)))
-		sign_mat[:] = -1
-
-		count = 0
+		count = 0	
 
 		for i in range(PERM):
 			perm = np.random.permutation(drows)
-			queryList.clear()
+			queryList = set()
 
 			partition = np.argsort(perm)
 
 			while len(self.queries) != len(queryList) and len(partition) != 0:
 				index_min = partition[0]
-				if index_min in shingles_matrix:
+				if shingles_matrix[index_min]:
 					for q in shingles_matrix[index_min]:
 						if not q in queryList:
 							queryList.add(q)
@@ -127,7 +127,7 @@ class Recommender:
 
 			count += 1
 
-			if count % 10 == 0:
+			if count % round(PERM * 0.1) == 0:
 				print("{} / {} [{}s]".format(count, PERM, round(time.time() - initial, 3)))
 
 		sign_mat = sign_mat.transpose() #get column, i.e. signature
@@ -143,7 +143,8 @@ class Recommender:
 
 		signatures = self.compute_signatures()
 		
-		MAX_CANDIDATES = round(math.log(len(self.queries), 1.5))
+		#MAX_CANDIDATES = round(math.log(len(self.queries), 1.5))
+		MAX_CANDIDATES = 10
 
 		print("\nMax query candidates: {}, Total queries: {}".format(MAX_CANDIDATES, len(self.queries)))
 
@@ -206,7 +207,8 @@ class Recommender:
 
 	def compute_userSimilarities(self):
 
-		MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
+		#MAX_CANDIDATES = round(math.log(len(self.usersIDs), 1.5))
+		MAX_CANDIDATES = 10
 		CLUSTER_COUNT = round(len(self.usersIDs) ** (1 / 1.75))
 
 		print("\nMax user candidates: {}, Total users: {}".format(MAX_CANDIDATES, len(self.usersIDs)))
@@ -340,7 +342,7 @@ class Recommender:
 
 			count += 1
 
-			if count % 10000 == 0:
+			if count % round(len(scores_to_predict) * 0.1) == 0:
 				print("{} / {} [{}s]".format(count, len(scores_to_predict), round(time.time() - initial, 3)))
 			
 
