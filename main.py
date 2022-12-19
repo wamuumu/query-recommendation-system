@@ -1,12 +1,9 @@
 from recommender import Recommender
 from resources import generator
 from datatable import dt
-#from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
 import numpy as np
 import time
-import gc
-
 
 if __name__ == "__main__":
 
@@ -56,9 +53,6 @@ if __name__ == "__main__":
 	# Reccomender class to predict values
 	recommender = Recommender(users, queries, queriesIDs, dataset, ratings)
 
-	del users, queries, dataset, ratings
-	gc.collect()
-
 	# =========================== PART A ===========================
 
 	to_predict, predictions, missed = recommender.compute_scores()
@@ -68,12 +62,21 @@ if __name__ == "__main__":
 
 	# Save prediction in csv file using generator csv writer
 	
-	csv_rows = predictions.to_numpy().tolist()
-	
-	for ind in range(len(list(predictions.index.values))):
-		csv_rows[ind].insert(0, predictions.index.values[ind])
+	command = ""
+	while not command.lower() in ["yes", "no"]:
+		command = input("Do you want to export final predictions? [Yes-No][Default: Yes] ")
+		if command == "":
+			command = "yes"
 
-	generator.write_csv("output", predictions.columns, csv_rows)
+	if command == "yes":
+		csv_rows = predictions.to_numpy().tolist()
+		
+		for ind in range(len(list(predictions.index.values))):
+			csv_rows[ind].insert(0, predictions.index.values[ind])
+
+		generator.write_csv("final_predictions", predictions.columns, csv_rows)
+
+		print("Final utility matrix saved in output/final_predictions.csv")
 
 	recommender.top_k_queries(to_predict, predictions, missed)
 
