@@ -1,67 +1,65 @@
-Profession
-Professors
-Teachers
-Actors
-Clergy
-Musicians
-Philosophers
-Visual Artists
-Writers
-Audiologists
-Chiropractors
-Dentists
-Dietitians
-Doctors
-Medical Laboratory Scientists
-Midwives
-Nurses
-Occupational therapists
-Optometrists
-Pathologists
-Pharmacists
-Physical therapists
-Physicians
-Psychologists
-Speech-language pathologists
-Accountants
-Actuaries
-Agriculturists
-Architects
-Economists
-Engineers
-Interpreters
+Professor
+Teacher
+Actor
+Musician
+Philosopher
+Visual Artist
+Writer
+Audiologist
+Chiropractor
+Dentist
+Dietitian
+Doctor
+Medical Laboratory Scientist
+Midwive
+Nurse
+Occupational therapist
+Optometrist
+Pathologist
+Pharmacist
+Physical therapist
+Physician
+Psychologist
+Speech-language pathologist
+Accountant
+Actuarie
+Agriculturist
+Architect
+Economist
+Engineer
+Interpreter
 Attorney at law
-Advocates
-Solicitors
-Librarians
-Statisticians
-Surveyors
-Urban planners
-Human resources
-Firefighters
-Judges
-Military officers
-Police officers
-Air traffic controllers
-Aircraft pilots
-Sea captains
-Scientists
-Astronomers
-Biologists
-Botanists
-Ecologists
-Geneticists
-Immunologists
-Pharmacologists
-Virologists
-Zoologists
-Chemists
-Geologists
-Meteorologists
-Oceanographers
-Physicists
-Programmers
-Web developers
-Designers
-Graphic designers
-Web designers
+Advocate
+Solicitor
+Librarian
+Statistician
+Surveyor
+Urban planner
+Human resource
+Firefighter
+Judge
+Military officer
+Police officer
+Air traffic controller
+Aircraft pilo
+Sea captain
+Scientist
+Astronomer
+Biologist
+Botanist
+Ecologist
+Geneticist
+Immunologist
+Pharmacologist
+Virologist
+Zoologist
+Chemist
+Geologist
+Meteorologist
+Oceanographer
+Physicist
+Programmer
+Web developer
+Designer
+Graphic designer
+Web designer

@@ -1,37 +1,50 @@
+from math import radians, cos, sin, asin, sqrt
+
 from datatable import dt, f
 import pandas as pd
 
 import numpy as np
+import operator
 import random
 import string
 import time
 import csv
+import os
 
 #constants
 MAX_DATA = 10000 #1000000
 MAX_QUERIES = 10000 #10000
 MAX_USERS = 10000 #100000
-MIN_ETA, MAX_ETA = 18, 95
+MIN_ETA, MAX_ETA = 18, 55
 MIN_VOTE, MAX_VOTE = 1, 100
 
+MALE = 75
+FEMALE = 25
+
 # data
-names = []
+male_names = []
+female_names = []
 addresses = []
 occupations = []
 
+# user
+user_tastes = {}
+
 random.seed(time.time())
 
-allowed_features = ["name","address","age","occupation"]
+allowed_features = ["name","gender","address","age","occupation"]
 
 def get_data():
 
-	global names, addresses, occupations
+	global male_names, female_names, addresses, occupations
 
-	with open("./input/names.txt") as file:
-		names = [line.strip() for line in file]
+	with open("./input/male_names.txt") as file:
+		male_names = [line.strip() for line in file]
 
-	with open("./input/addresses.txt") as file:
-		addresses = [line.strip() for line in file]
+	with open("./input/female_names.txt") as file:
+		female_names = [line.strip() for line in file]
+
+	addresses = dt.fread("./input/addresses.csv").to_pandas()
 
 	with open("./input/occupations.txt") as file:
 		occupations = [line.strip() for line in file]
@@ -45,6 +58,10 @@ def write_csv(filename, header, data):
 	#header = [] -> array of attributes
 	#data = [[],[],[],...] -> array of rows (attributes separated with commas)
 
+	output_folder = os.path.exists("output")
+	if not output_folder:
+		os.makedirs("output")
+
 	with open("./output/" + filename + ".csv", 'w+', newline='') as file:
 		writer = csv.writer(file)
 
@@ -57,41 +74,97 @@ def write_csv(filename, header, data):
 
 def create_dataset():
 
-	global names, addresses, occupations
+	global male_names, female_names, addresses, occupations
 
 	print("Generating dataset...")
 
 	data = set()
 
 	while len(data) < MAX_DATA:
-		name_ind = random.randint(0, len(names) - 1)
+		gender = random.randint(1, 100)
+		gender = "F" if gender < FEMALE else "M" 
+
+		if gender == "M":
+			name = male_names[random.randint(0, len(male_names) - 1)]
+		else:
+			name = female_names[random.randint(0, len(female_names) - 1)]
+
 		address_ind = random.randint(0, len(addresses) - 1)
 		occupation_ind = random.randint(0, len(occupations) - 1)
 		age = random.randint(MIN_ETA, MAX_ETA)
 
-		item = (len(data) + 1, names[name_ind], addresses[address_ind], age, occupations[occupation_ind])
+		item = (len(data) + 1, name, gender, addresses.iloc[address_ind]['city'], age, occupations[occupation_ind])
 
-		'''if item in data:
+		if item in data and MAX_DATA < 1000:
 			continue
-		else:'''
-		data.add(item)
+		else:
+			data.add(item)
 
 	dataset = list(map(list, data))
 	sorted_dataset = sorted(dataset, key=lambda tup: tup[0])
 
-	write_csv("dataset", ["id", "name", "address", "age", "occupation"], sorted_dataset)
+	write_csv("dataset", ["id", "name", "gender", "address", "age", "occupation"], sorted_dataset)
 
 	print("Dataset created and saved in /output/dataset.csv")
+
+def dist(lat1, long1, lat2, long2):
+
+	lat1, long1, lat2, long2 = map(radians, [lat1, long1, lat2, long2])
+
+	dlon = long2 - long1 
+	dlat = lat2 - lat1 
+	a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+	c = 2 * asin(sqrt(a)) 
+
+	km = 6371 * c
+	return km
+
+def find_nearest(lat, lng, k):
+	global addresses
+	distances = addresses.apply(lambda row: dist(lat, lng, row['lat'], row['lng']), axis=1).to_dict()
+	distances = list(dict(sorted(distances.items(), key=operator.itemgetter(1))).keys())[0:k]
+	return ",".join(addresses.loc[distances, 'city'].to_numpy())
 
 def create_users():
 	
 	print("Generating users...")
 
+	global user_tastes, male_names, female_names, addresses, occupations
+
 	data = []
+
+	top_k_address = random.randint(0, 15)
+
+	addresses['nearest'] = addresses.apply(lambda row: find_nearest(row['lat'], row['lng'], top_k_address), axis=1)
+
+	print("nearest cities found")
 
 	for i in range(MAX_USERS):
 		user = "U" + str(i+1)
 		data.append(user)
+
+		occupation_choice = random.randint(1, 5)
+		age_choice = random.randint(1, 4)
+
+		gender = random.randint(1, 100)
+		gender = "F" if gender > FEMALE else "M" # if M then likes F or viceversa
+
+		age = random.randint(MIN_ETA, MAX_ETA)
+
+		address_choice = random.randint(0, len(addresses) - 1)
+
+		user_tastes[user] = {}
+		user_tastes[user]["gender"] = gender
+		user_tastes[user]["address"] = addresses.iloc[address_choice]['nearest'].split(",")
+
+		if age == MIN_ETA:
+			user_tastes[user]["age"] = list(range(age, age + age_choice))
+		elif age == MAX_ETA:
+			user_tastes[user]["age"] = list(range(age - age_choice, age))
+		else:
+			user_tastes[user]["age"] = list(range(age - age_choice, age + age_choice))
+
+		user_tastes[user]["occupations"] = random.sample(occupations, occupation_choice)
 
 	with open("./output/users.csv", "w+") as file:
 		for user in data:
@@ -226,7 +299,7 @@ if __name__ == "__main__":
 
 	create_dataset()
 	create_users()
-	create_queries()
-	create_matrix()
+	#create_queries()
+	#create_matrix()
 
 	exit(0)
