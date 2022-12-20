@@ -102,23 +102,20 @@ class Recommender:
 		sign_mat = np.full((PERM, self.queriesIDs.size), -1, dtype='int64')
 
 		count = 0	
-
+		
 		for i in range(PERM):
 			perm = np.random.permutation(len(shingles_dict))
-			
-			queryList = [False] * self.queriesIDs.size
-			queryCount = 0 
+			queryList = set()
 
 			partition = np.argsort(perm)
 
 			# 25s
-			while self.queriesIDs.size != queryCount and partition.size != 0:
+			while self.queriesIDs.size != len(queryList) and partition.size != 0:
 				index_min = partition[0]
 				if shingles_dict[index_min]:
 					for q in shingles_dict[index_min]:
-						if not queryList[q]:
-							queryList[q] = True
-							queryCount += 1
+						if not q in queryList:
+							queryList.add(q)
 							sign_mat[i][q] = perm[index_min]
 				partition = partition[1::]
 
@@ -159,7 +156,7 @@ class Recommender:
 		initial = time.time()
 
 		query_sim = {}
-		available_query = [False] * self.queriesIDs.size
+		available_query = set()
 
 		for i, j in candidates:
 			sim = round(max(0, cosine_similarity([signatures[i], signatures[j]])[0][1]), 3)
@@ -180,8 +177,8 @@ class Recommender:
 			query_sim[j]['indexes'].append(i)
 			query_sim[j]['values'].append(sim)
 
-			available_query[i] = True
-			available_query[j] = True
+			available_query.add(i)
+			available_query.add(j)
 
 		#query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
 
@@ -293,10 +290,11 @@ class Recommender:
 		for i, j in scores_to_predict:
 
 			# COLLABORATIVE FILTERING QUERY-QUERY 
-			if available_query[j]:
+			if j in available_query:
 
-				userRating = np.array(self.ratings[i][querySimilarities[j]["indexes"]])
-				simScores = np.array(querySimilarities[j]["values"])
+				userRating = self.ratings[i][querySimilarities[j]["indexes"]]
+				simScores = querySimilarities[j]["values"]
+
 				simScores[userRating == 0] = 0
 				weightSum = np.sum(simScores)
 
@@ -309,8 +307,8 @@ class Recommender:
 
 
 			# COLLABORATIVE FILTERING USER-USER
-			userRating = np.array(self.ratingsT[j][userSimilarities[i]["indexes"]])
-			simScores = np.array(userSimilarities[i]["values"])
+			userRating = self.ratingsT[j][userSimilarities[i]["indexes"]]
+			simScores = userSimilarities[i]["values"]
 			
 			simScores[userRating == 0] = 0
 			weightSum = np.sum(simScores)
@@ -319,6 +317,7 @@ class Recommender:
 				userPrediction = 0
 			else:
 				userPrediction = np.sum(userRating * simScores) / weightSum
+
 
 			# HYBRID PREDICTIONS
 			if userPrediction == 0 and queryPrediction == 0:
