@@ -7,7 +7,23 @@ import time
 
 if __name__ == "__main__":
 
+	# class to predict value
+	recommender = Recommender()
+
 	# Fetch initial data 
+
+	initial = time.time()
+	dataset = dt.fread("./resources/output/dataset.csv")
+	print(str(round(time.time() - initial, 3)) + "s to read dataset")
+
+	drows, dcols = dataset.shape
+
+	if drows == 0:
+		print("The dataset is empty!")
+		exit(1)
+
+	# features of dataset to parse queries
+	recommender.datasetFeatures = list(dataset.names)[1::]
 
 	initial = time.time()
 	users = dt.fread("./resources/output/users.csv", header=False)
@@ -20,23 +36,13 @@ if __name__ == "__main__":
 		exit(1)
 
 	initial = time.time()
-	queries, queriesIDs = generator.parse_queries("./resources/output/queries.csv")
+	queries, queriesIDs = recommender.parse_queries("./resources/output/queries.csv")
 	print(str(round(time.time() - initial, 3)) + "s to read queries")
 
 	qrows, qcols = queries.shape
 
 	if qrows == 0:
 		print("The query set is empty!")
-		exit(1)
-
-	initial = time.time()
-	dataset = dt.fread("./resources/output/dataset.csv")
-	print(str(round(time.time() - initial, 3)) + "s to read dataset")
-
-	drows, dcols = dataset.shape
-
-	if drows == 0:
-		print("The dataset is empty!")
 		exit(1)
 
 	initial = time.time()
@@ -50,15 +56,19 @@ if __name__ == "__main__":
 		print("The utility matrix is empty!")
 		exit(1)
 
-	# Reccomender class to predict values
-	recommender = Recommender(users, queries, queriesIDs, dataset, ratings)
+	# Assign all values to recommender class
+	recommender.init(users, queries, queriesIDs, dataset, ratings)
 
 	# =========================== PART A ===========================
 
 	to_predict, predictions, missed = recommender.compute_scores()
 
-	print("\nFINAL PREDICTIONS [{} scores to predict, {} scores missed - {}% miss]:".format(len(to_predict), len(missed), round(len(missed) / len(to_predict), 3) * 100))	
+	if len(to_predict) > 0:
+		print("\nFINAL PREDICTIONS [{} scores to predict, {} scores missed - {}% miss]:".format(len(to_predict), len(missed), round((len(missed) / len(to_predict)) * 100, 3)))	
 	print(predictions)
+
+	#print(predictions.max().to_numpy(), max(predictions.max().to_numpy()))
+	exit(0)
 
 	# Save prediction in csv file using generator csv writer
 	

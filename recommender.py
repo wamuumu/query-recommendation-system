@@ -24,7 +24,6 @@ pd.options.mode.chained_assignment = None
 
 # constants
 PERM = 120 # number of independent hash functions (e.g. 100) for computing signatures' matrix
-BAND = 40 # number of bands in a signature
 
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
@@ -32,21 +31,62 @@ DEFAULT_MEAN = 60
 
 class Recommender:
 
-	def __init__(self, users, queries, queriesIDs, dataset, ratings):
-		self.usersIDs = users.to_numpy().transpose()[0]
+	def init(self, users, queries, queriesIDs, dataset, ratings):
+		self.usersIDs = users.to_numpy().T[0]
 
 		self.queries = queries.to_numpy()
 		self.queriesIDs = np.array(queriesIDs)
 		
 		dataset[:] = dt.str64
-		self.datasetFeatures = list(dataset.names)[1::]
+		#self.datasetFeatures = list(dataset.names)[1::]
 		self.dataset = dataset.to_pandas()
 		self.tupleCount = {}
 		
-		ratings.replace({None: 0}) #replace NaN with 0
-		del ratings[:, ['user']] 
+		#ratings.replace({None: 0}) #replace NaN with 0
+		#del ratings[:, ['user']] 
+
+		# drop rows without any score -> impossible to predict
+		ratings = ratings.to_pandas()
+		ratings = ratings.drop(columns=['user'])
+		#ratings = ratings.dropna(axis=0, how='all')
+		ratings = ratings.fillna(0)
+		
+		new_ind = list(ratings.index.values)
+		self.usersIDs = self.usersIDs[new_ind]
+
 		self.ratings = ratings.to_numpy()
-		self.ratingsT = self.ratings.transpose()
+
+	def parse_queries(self, path:str):
+
+		data = []
+		indexes = []
+		pdict = {}
+		lineCount = 0
+
+		with open(path) as f:
+			for row in f:
+				lineCount += 1
+				row = row.rstrip('\n')
+				values = row.split(",")
+				indexes.append(values[0])
+				values = values[1::]
+
+				element = ["" for i in range(len(self.datasetFeatures))]
+
+				for val in values:
+					attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
+					ind = self.datasetFeatures.index(attr[0])
+					element[ind] = attr[1]
+
+				data.append(element)
+
+		if lineCount > 0:
+			data = np.array(data).T
+
+			for i in range(len(self.datasetFeatures)):
+				pdict[self.datasetFeatures[i]] = data[i] 
+
+		return dt.Frame(pdict), indexes
 
 	def compute_shingles(self):
 
@@ -83,10 +123,8 @@ class Recommender:
 
 			count += 1
 
-			if count % round(self.queriesIDs.size * 0.1) == 0:
+			if count % max(1, round(self.queriesIDs.size * 0.1)) == 0:
 				print("{} / {} [{}s]".format(count, self.queriesIDs.size, round(time.time() - initial, 3)))
-
-		#shingles_dict = dict(collections.OrderedDict(sorted(shingles_dict.items())))
 
 		print(str(round(time.time() - initial, 3)) + "s for shingles_dict")
 		return shingles_dict
@@ -109,7 +147,6 @@ class Recommender:
 
 			partition = np.argsort(perm)
 
-			# 25s
 			while self.queriesIDs.size != len(queryList) and partition.size != 0:
 				index_min = partition[0]
 				if shingles_dict[index_min]:
@@ -121,10 +158,10 @@ class Recommender:
 
 			count += 1
 
-			if count % round(PERM * 0.1) == 0:
+			if count % max(1, round(PERM * 0.1)) == 0:
 				print("{} / {} [{}s]".format(count, PERM, round(time.time() - initial, 3)))
 
-		sign_mat = sign_mat.transpose() #get column, i.e. signature
+		sign_mat = sign_mat.T #get column, i.e. signature
 
 		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
 
@@ -136,13 +173,26 @@ class Recommender:
 		
 		MAX_CANDIDATES = round(math.log(self.queriesIDs.size, 1.5))
 
-		print("\nMax query candidates: {}, Total queries: {}".format(MAX_CANDIDATES, self.queriesIDs.size))
+		QUERY_THRESH = 0.4
+		band = 40
+
+		print("\nQuery Thresh: " + str(QUERY_THRESH))
+		for b in list(range(1, PERM))[::-1]:
+			if PERM % b == 0 and b % 10 == 0:
+				r = PERM / b
+				thresh = round((1/b) ** (1/r), 2)
+				print(b, r, thresh)
+				if thresh > QUERY_THRESH:
+					band = b
+					break
+
+		print("\nMax query candidates: {}, Max bands: {}, Total queries: {}".format(MAX_CANDIDATES, band, self.queriesIDs.size))
 
 		# ================================= LSH =================================
 
 		initial = time.time()
-		
-		lsh = LSH(BAND)
+
+		lsh = LSH(band)
 
 		for sig in signatures:
 			lsh.compute_buckets(sig)
@@ -156,7 +206,6 @@ class Recommender:
 		initial = time.time()
 
 		query_sim = {}
-		available_query = set()
 
 		for i, j in candidates:
 			sim = round(max(0, cosine_similarity([signatures[i], signatures[j]])[0][1]), 3)
@@ -177,10 +226,7 @@ class Recommender:
 			query_sim[j]['indexes'].append(i)
 			query_sim[j]['values'].append(sim)
 
-			available_query.add(i)
-			available_query.add(j)
-
-		#query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
+		query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
 
 		for i in query_sim:
 			ind = np.argsort(query_sim[i]["values"])[::-1][0:MAX_CANDIDATES]
@@ -190,7 +236,7 @@ class Recommender:
 
 		print(str(round(time.time() - initial, 3)) + "s for queries_similarity scores")
 
-		return query_sim, available_query
+		return query_sim
 
 	def compute_userSimilarities(self):
 
@@ -203,10 +249,11 @@ class Recommender:
 
 		initial = time.time()
 			
-		scores = np.array(self.ratings)
+		scores = self.ratings.copy()
 
 		for s in range(len(scores)):
 			mean = np.mean(scores[s][scores[s] != 0])
+			mean = 0 if math.isnan(mean) else mean
 			scores[s][scores[s] == 0] = mean
 
 		scaler = StandardScaler()
@@ -272,13 +319,14 @@ class Recommender:
 	def compute_scores(self):
 
 		print("\n========== QUERY SIMILARITY ==========")
-		querySimilarities, available_query = self.compute_querySimilarities()
+		querySimilarities = self.compute_querySimilarities()
 		
 		print("\n========== USER SIMILARITY ==========")
 		userSimilarities = self.compute_userSimilarities()
 
 		print("\n========== WEIGHTED AVERAGES ==========")
-		scores_to_predict = np.array(np.where(self.ratings == 0)).transpose()
+		finalPredictions = self.ratings.copy()
+		scores_to_predict = np.array(np.where(self.ratings == 0)).T
 
 		queryPrediction = 0
 		userPrediction = 0
@@ -290,10 +338,10 @@ class Recommender:
 		for i, j in scores_to_predict:
 
 			# COLLABORATIVE FILTERING QUERY-QUERY 
-			if j in available_query:
+			if j in querySimilarities:
 
 				userRating = self.ratings[i][querySimilarities[j]["indexes"]]
-				simScores = querySimilarities[j]["values"]
+				simScores = querySimilarities[j]["values"].copy()
 
 				simScores[userRating == 0] = 0
 				weightSum = np.sum(simScores)
@@ -307,8 +355,8 @@ class Recommender:
 
 
 			# COLLABORATIVE FILTERING USER-USER
-			userRating = self.ratingsT[j][userSimilarities[i]["indexes"]]
-			simScores = userSimilarities[i]["values"]
+			userRating = self.ratings.T[j][userSimilarities[i]["indexes"]]
+			simScores = userSimilarities[i]["values"].copy()
 			
 			simScores[userRating == 0] = 0
 			weightSum = np.sum(simScores)
@@ -321,24 +369,24 @@ class Recommender:
 
 			# HYBRID PREDICTIONS
 			if userPrediction == 0 and queryPrediction == 0:
-				self.ratings[i][j] = 0 #cannot find a predictable value
+				finalPredictions[i][j] = 0 #cannot find a predictable value
 			elif userPrediction == 0:
-				self.ratings[i][j] = round(queryPrediction * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
+				finalPredictions[i][j] = round(queryPrediction * (QUERY_WEIGHT + (USER_WEIGHT*0.5)) + DEFAULT_MEAN * (USER_WEIGHT*0.5))
 			elif queryPrediction == 0:
-				self.ratings[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
+				finalPredictions[i][j] = round(userPrediction * (USER_WEIGHT + (QUERY_WEIGHT*0.5)) + DEFAULT_MEAN * (QUERY_WEIGHT*0.5))
 			else:
-				self.ratings[i][j] = round(queryPrediction * QUERY_WEIGHT + userPrediction * USER_WEIGHT)
+				finalPredictions[i][j] = round(queryPrediction * QUERY_WEIGHT + userPrediction * USER_WEIGHT)
 
 			count += 1
 
-			if count % round(len(scores_to_predict) * 0.1) == 0:
+			if count % max(1, round(len(scores_to_predict) * 0.1)) == 0:
 				print("{} / {} [{}s]".format(count, len(scores_to_predict), round(time.time() - initial, 3)))
 			
 
 		print(str(round(time.time() - initial, 3)) + "s for weighted averages")
 
-		finalPredictions = pd.DataFrame(self.ratings, columns = self.queriesIDs, index = self.usersIDs)
-		scores_missed = np.array(np.where(finalPredictions == 0)).transpose()
+		finalPredictions = pd.DataFrame(finalPredictions, columns = self.queriesIDs, index = self.usersIDs).astype(int)
+		scores_missed = np.array(np.where(finalPredictions == 0)).T
 
 		return scores_to_predict, finalPredictions, scores_missed
 
@@ -387,7 +435,7 @@ class Recommender:
 
 	def suggest_queries(self, predictions):
 		
-		predictions = predictions.to_numpy().transpose()
+		predictions = predictions.to_numpy().T
 		suggestions = []
 
 		initial = time.time()

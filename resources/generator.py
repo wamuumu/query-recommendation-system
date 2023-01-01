@@ -1,10 +1,9 @@
-from math import radians, cos, sin, asin, sqrt
-
+from math import radians
+from sklearn.metrics import DistanceMetric
 from datatable import dt, f
-import pandas as pd
 
+import pandas as pd
 import numpy as np
-import operator
 import random
 import string
 import time
@@ -12,7 +11,7 @@ import csv
 import os
 
 #constants
-MAX_DATA = 10000 #1000000
+MAX_DATA = 100000 # >= MAX_USERS
 MAX_QUERIES = 10000 #10000
 MAX_USERS = 10000 #100000
 MIN_ETA, MAX_ETA = 18, 55
@@ -30,9 +29,13 @@ occupations = []
 # user
 user_tastes = {}
 
-random.seed(time.time())
+# query
+queries = []
+user_queries = {}
+usersIDs = []
+queriesIDs = []
 
-allowed_features = ["name","gender","address","age","occupation"]
+random.seed(time.time())
 
 def get_data():
 
@@ -107,190 +110,237 @@ def create_dataset():
 
 	print("Dataset created and saved in /output/dataset.csv")
 
-def dist(lat1, long1, lat2, long2):
-
-	lat1, long1, lat2, long2 = map(radians, [lat1, long1, lat2, long2])
-
-	dlon = long2 - long1 
-	dlat = lat2 - lat1 
-	a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-	c = 2 * asin(sqrt(a)) 
-
-	km = 6371 * c
-	return km
-
-def find_nearest(lat, lng, k):
-	global addresses
-	distances = addresses.apply(lambda row: dist(lat, lng, row['lat'], row['lng']), axis=1).to_dict()
-	distances = list(dict(sorted(distances.items(), key=operator.itemgetter(1))).keys())[0:k]
-	return ",".join(addresses.loc[distances, 'city'].to_numpy())
-
 def create_users():
 	
 	print("Generating users...")
 
-	global user_tastes, male_names, female_names, addresses, occupations
+	global user_tastes, male_names, female_names, addresses, occupations, usersIDs
 
-	data = []
+	addresses['lat'] = np.radians(addresses['lat'])
+	addresses['lng'] = np.radians(addresses['lng'])
 
-	top_k_address = random.randint(0, 15)
+	dist = DistanceMetric.get_metric('haversine')
 
-	addresses['nearest'] = addresses.apply(lambda row: find_nearest(row['lat'], row['lng'], top_k_address), axis=1)
-
-	print("nearest cities found")
+	distances = dist.pairwise(addresses[['lat', 'lng']].to_numpy()) * 6373
 
 	for i in range(MAX_USERS):
 		user = "U" + str(i+1)
-		data.append(user)
+		usersIDs.append(user)
 
 		occupation_choice = random.randint(1, 5)
 		age_choice = random.randint(1, 4)
 
 		gender = random.randint(1, 100)
-		gender = "F" if gender > FEMALE else "M" # if M then likes F or viceversa
-
-		age = random.randint(MIN_ETA, MAX_ETA)
+		gender = "F" if gender < FEMALE else "M" # if M then likes F or viceversa
 
 		address_choice = random.randint(0, len(addresses) - 1)
 
 		user_tastes[user] = {}
 		user_tastes[user]["gender"] = gender
-		user_tastes[user]["address"] = addresses.iloc[address_choice]['nearest'].split(",")
+		user_tastes[user]["likes"] = "F" if gender == "M" else "M"
 
-		if age == MIN_ETA:
-			user_tastes[user]["age"] = list(range(age, age + age_choice))
-		elif age == MAX_ETA:
-			user_tastes[user]["age"] = list(range(age - age_choice, age))
+		top_k = np.argsort(distances[address_choice])
+		top_k = top_k[distances[address_choice][top_k] <= 100]
+
+		user_tastes[user]["location"] = addresses.loc[address_choice]['city']
+		user_tastes[user]["addresses"] = list(addresses.loc[top_k]['city'].to_numpy())
+
+		age = random.randint(MIN_ETA, MAX_ETA)
+
+		if age - age_choice < MIN_ETA:
+			user_tastes[user]["ages"] = list(range(MIN_ETA, age + age_choice))
+		elif age + age_choice > MAX_ETA:
+			user_tastes[user]["ages"] = list(range(age - age_choice, MAX_ETA))
 		else:
-			user_tastes[user]["age"] = list(range(age - age_choice, age + age_choice))
+			user_tastes[user]["ages"] = list(range(age - age_choice, age + age_choice))
 
+		user_tastes[user]["ages"] = list(map(str, user_tastes[user]["ages"]))
 		user_tastes[user]["occupations"] = random.sample(occupations, occupation_choice)
 
+
 	with open("./output/users.csv", "w+") as file:
-		for user in data:
+		for user in usersIDs:
 			file.write("%s\n" % user)
 
 	print("Users' set created and saved in /output/users.csv")
 
 def create_queries():
 	
-	global names, addresses, occupations
+	global male_names, female_names, user_tastes, addresses, occupations, queries, user_queries, queriesIDs, usersIDs
 
 	print("Generating queries...")
 
 	dataset = dt.fread("./output/dataset.csv")
-	dataset[:] = dt.str32
+	dataset[:] = dt.str64
 	dataset = dataset.to_pandas()
 
 	data = set()
+	picked = set()
 
 	initial = time.time()
 
 	while len(data) < MAX_QUERIES:
 
+		u = random.choice(list(user_tastes.keys()))
+		ruser = user_tastes[u]
+		
+		user_queries[len(data)] = u
+
 		queryID = "Q" + str(len(data) + 1)
 
-		randomName, randomAddress, randomAge, randomOccupation = None, None, None, None #attributes that haven't been picked yet
+		randomName, randomGender, randomAddress, randomAge, randomOccupation = None, None, None, None, None
 		query = []
 
-		choice = random.randint(0, 1) #try to pick name for query
-		if choice == 1:
-			tmp = names[random.randint(0, len(names) - 1)]
+		choice = random.randint(0, 5) #try to pick name for query
+		if choice == 5:
+			if ruser["likes"] == "F":
+				tmp = female_names[random.randint(0, len(female_names) - 1)]
+			else:
+				tmp = male_names[random.randint(0, len(male_names) - 1)]
 			randomName = "name=" + tmp
 			query.append('name=="' + tmp + '"')
+		elif choice == 0:
+			randomGender = "gender=" + ruser["likes"]
+			query.append('gender=="' + ruser["likes"] + '"')
 
 		choice = random.randint(0, 1) #try to pick address for query
 		if choice == 1:
-			tmp = addresses[random.randint(0, len(addresses) - 1)]
+			tmp = ruser["addresses"][random.randint(0, len(ruser["addresses"]) - 1)]
 			randomAddress = "address=" + tmp
 			query.append('address=="' + tmp + '"')
 
 		choice = random.randint(0, 1) #try to pick age for query
 		if choice == 1:
-			tmp = str(random.randint(MIN_ETA, MAX_ETA))
+			tmp = str(ruser["ages"][random.randint(0, len(ruser["ages"]) - 1)])
 			randomAge = "age=" + tmp 
 			query.append('age=="' + tmp + '"')
 
 		choice = random.randint(0, 1) #try to pick occupation for query
 		if choice == 1:
-			tmp = occupations[random.randint(0, len(occupations) - 1)]
+			tmp = ruser["occupations"][random.randint(0, len(ruser["occupations"]) - 1)]
 			randomOccupation = "occupation=" + tmp
 			query.append('occupation=="' + tmp + '"')
 
-		item = (queryID, randomName, randomAddress, randomAge, randomOccupation)
+		item = (queryID, randomName, randomGender, randomAddress, randomAge, randomOccupation)
 
-		if (randomName == None and randomAddress == None and randomAge == None and randomOccupation == None):
+		if (randomName == None and randomGender == None and randomAddress == None and randomAge == None and randomOccupation == None):
 			continue
 		else:
+
 			query = " and ".join(query)
+
 			filteredDataset = dataset.query(query)
 
 			if len(filteredDataset.index.values) > 0:
 				data.add(item)
-				print("{} / {} [{}s]".format(len(data), MAX_QUERIES, round(time.time() - initial, 3)))
+				if len(data) % max(1, round(MAX_QUERIES * 0.1)) == 0:
+					print("{} / {} [{}s]".format(len(data), MAX_QUERIES, round(time.time() - initial, 3)))
 			else:
 				continue
 
+			#query = " and ".join(query)
+			queriesIDs.append(queryID)
+			queries.append(query)
+			data.add(item)
+
 	data = [tuple(attr for attr in item if attr is not None) for item in data] #remove from all queries those attributes with no value
 
-	queries = list(map(list, data))
-	sorted_queries = sorted(queries, key=lambda tup: int(tup[0][1::]))
+	mapped_data = list(map(list, data))
+	sorted_queries = sorted(mapped_data, key=lambda tup: int(tup[0][1::]))
 
 	write_csv("queries", None, sorted_queries)
 
 	print("Queries' set created and saved in /output/queries.csv")
-
-def parse_queries(path:str):
-
-	data = []
-	indexes = []
-	pdict = {}
-	lineCount = 0
-
-	with open(path) as f:
-		for row in f:
-			lineCount += 1
-			row = row.rstrip('\n')
-			values = row.split(",")
-			indexes.append(values[0])
-			values = values[1::]
-
-			element = ["" for i in range(len(allowed_features))]
-
-			for val in values:
-				attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
-				ind = allowed_features.index(attr[0])
-				element[ind] = attr[1]
-
-			data.append(element)
-
-	if lineCount > 0:
-		data = np.array(data).transpose()
-
-		for i in range(len(allowed_features)):
-			pdict[allowed_features[i]] = data[i] 
-
-	return dt.Frame(pdict), indexes
 	
 def create_matrix():
 	
+	global user_tastes, queries, user_queries, usersIDs, queriesIDs
+
+	dataset = dt.fread("./output/dataset.csv")
+	dataset[:] = dt.str64
+	dataset = dataset.to_pandas()
+
+	scores = np.full((MAX_USERS, MAX_QUERIES), "", dtype=object)
+
+	fweights = {"gender": 0.5, "address": 0.25, "age": 0.15, "occupation": 0.10}
+	#fweights = {"gender": 0.25, "address": 0.25, "age": 0.25, "occupation": 0.25}
+
 	print("Generating partial utility matrix...")
 
-	users = dt.fread("./output/users.csv", header=False).to_numpy()
-	queries, queriesIDs = parse_queries("./output/queries.csv")
+	for u in user_tastes:
+		user_tastes[u]["addresses"] = set(user_tastes[u]["addresses"])
+		user_tastes[u]["ages"] = set(user_tastes[u]["ages"])
+		user_tastes[u]["occupations"] = set(user_tastes[u]["occupations"])
 
-	randomScores = np.random.randint(low=MIN_VOTE, high=MAX_VOTE, size=( len(users), len(queriesIDs))).astype('O')
-	print("random scores generated")
-	mask = np.random.randint(0, 5, size=randomScores.shape).astype(bool)
-	print("mask generated")
-	randomScores[np.logical_not(mask)] = ""
-	print("mask applied")
+	#print(user_queries)
+	initial = time.time()
+	for q in range(len(queries)):
 
-	randomScores = np.concatenate((users, randomScores), axis=1)
+		filteredDataset = dataset.query(queries[q]).to_numpy().T
 
-	write_csv("utility_matrix", queriesIDs, randomScores)
+		# 1 -> name, 2 -> gender, 3 -> address, 4 -> age, 5 -> occupation
+
+		qgender = list(filteredDataset[2])
+		qaddress = list_to_dict(list(filteredDataset[3]))
+		qages = list_to_dict(list(filteredDataset[4]))
+		qoccupation = list_to_dict(list(filteredDataset[5]))
+
+		total = len(qgender)
+
+		u_key = 0
+		for u in user_tastes:
+
+			choice = random.randint(0, 3)
+
+			if choice == 0 or user_queries[q] == u:
+				
+				score = qgender.count(user_tastes[u]['likes']) * fweights["gender"]
+				score += intersection_score(qaddress, user_tastes[u]["addresses"]) * fweights["address"]
+				score += intersection_score(qages, user_tastes[u]["ages"]) * fweights["age"]
+				score += intersection_score(qoccupation, user_tastes[u]["occupations"]) * fweights["occupation"] 
+				
+				score = max(1, round((score / total) * 100)) if total > 0 else 1
+
+				scores[u_key][q] = score
+
+			u_key += 1
+
+		if q != 0 and q % max(1, round(len(queries) * 0.1)) == 0:
+			print("{} / {} [{}s]".format(q, len(queries), round(time.time() - initial, 3)))
+
+
+	absMax = 100 / np.percentile(scores[scores != ""], 99.9)
+	print(absMax)
+
+	values = scores[scores != ""] * absMax
+	values = np.array([round(i) for i in values])
+	values[values > 100] = 100
+	scores[scores != ""] = values
+
+	usersIDs = np.array([usersIDs])
+	scores = np.concatenate((usersIDs.T, scores), axis=1)
+
+	write_csv("utility_matrix", queriesIDs, scores)
 
 	print("Partial utility matrix created and saved in /output/utility_matrix.csv")
+
+
+def intersection_score(queryValues, tasteSet):
+	score = 0
+	for t in tasteSet:
+		if t in queryValues:
+			score += queryValues[t]
+
+	return score
+
+def list_to_dict(llist):
+	counter = {}
+	for i in llist:
+		if i not in counter:
+			counter[i] = 0
+		counter[i] += 1
+
+	return counter
 
 
 if __name__ == "__main__":
@@ -299,7 +349,7 @@ if __name__ == "__main__":
 
 	create_dataset()
 	create_users()
-	#create_queries()
-	#create_matrix()
+	create_queries()
+	create_matrix()
 
 	exit(0)
