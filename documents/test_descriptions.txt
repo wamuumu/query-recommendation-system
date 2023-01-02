@@ -1,0 +1,5 @@
+data_test 1:
+ - dimesioni piccole con valori simili produce valori simili
+
+data_test 2:
+ - dimensioni grandi con stessi utenti produce valori simili (U1 == U2, Prime 3 query simili)

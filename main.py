@@ -49,7 +49,7 @@ if __name__ == "__main__":
 	cols = ["user"] + queriesIDs 
 	ratings = dt.fread("./resources/output/utility_matrix.csv", columns=cols)
 	print(str(round(time.time() - initial, 3)) + "s to read utility matrix")
-
+	
 	urows, ucols = ratings.shape
 
 	if urows == 0:

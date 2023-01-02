@@ -11,9 +11,10 @@ import csv
 import os
 
 #constants
-MAX_DATA = 100000 # >= MAX_USERS
-MAX_QUERIES = 10000 #10000
-MAX_USERS = 10000 #100000
+MAX_DATA = 10
+MAX_QUERIES = 4
+MAX_USERS = 2
+
 MIN_ETA, MAX_ETA = 18, 55
 MIN_VOTE, MAX_VOTE = 1, 100
 
@@ -289,10 +290,10 @@ def create_matrix():
 
 		u_key = 0
 		for u in user_tastes:
+			
+			choice = random.randint(0, 4)
 
-			choice = random.randint(0, 3)
-
-			if choice == 0 or user_queries[q] == u:
+			if choice <= 3 or user_queries[q] == u:
 				
 				score = qgender.count(user_tastes[u]['likes']) * fweights["gender"]
 				score += intersection_score(qaddress, user_tastes[u]["addresses"]) * fweights["address"]

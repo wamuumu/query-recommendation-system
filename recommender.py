@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
 # dataframes to handle csv
-from datatable import dt, f
+from datatable import dt, f, ifelse, update
 import pandas as pd
 
 # general imports
@@ -38,55 +38,15 @@ class Recommender:
 		self.queriesIDs = np.array(queriesIDs)
 		
 		dataset[:] = dt.str64
-		#self.datasetFeatures = list(dataset.names)[1::]
 		self.dataset = dataset.to_pandas()
 		self.tupleCount = {}
 		
-		#ratings.replace({None: 0}) #replace NaN with 0
-		#del ratings[:, ['user']] 
-
-		# drop rows without any score -> impossible to predict
-		ratings = ratings.to_pandas()
-		ratings = ratings.drop(columns=['user'])
-		#ratings = ratings.dropna(axis=0, how='all')
-		ratings = ratings.fillna(0)
-		
-		new_ind = list(ratings.index.values)
-		self.usersIDs = self.usersIDs[new_ind]
+		del ratings[:, ['user']] #delete user from ratings
+		ratings[:, update(**{key: ifelse(f[key] == None, 0, f[key]) for key in ratings.names})] #replace NaN with 0
 
 		self.ratings = ratings.to_numpy()
 
-	def parse_queries(self, path:str):
-
-		data = []
-		indexes = []
-		pdict = {}
-		lineCount = 0
-
-		with open(path) as f:
-			for row in f:
-				lineCount += 1
-				row = row.rstrip('\n')
-				values = row.split(",")
-				indexes.append(values[0])
-				values = values[1::]
-
-				element = ["" for i in range(len(self.datasetFeatures))]
-
-				for val in values:
-					attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
-					ind = self.datasetFeatures.index(attr[0])
-					element[ind] = attr[1]
-
-				data.append(element)
-
-		if lineCount > 0:
-			data = np.array(data).T
-
-			for i in range(len(self.datasetFeatures)):
-				pdict[self.datasetFeatures[i]] = data[i] 
-
-		return dt.Frame(pdict), indexes
+	# MAIN COMPUTATIONAL METHODS
 
 	def compute_shingles(self):
 
@@ -182,7 +142,7 @@ class Recommender:
 				r = PERM / b
 				thresh = round((1/b) ** (1/r), 2)
 				print(b, r, thresh)
-				if thresh > QUERY_THRESH:
+				if thresh >= QUERY_THRESH:
 					band = b
 					break
 
@@ -241,7 +201,7 @@ class Recommender:
 	def compute_userSimilarities(self):
 
 		MAX_CANDIDATES = round(math.log(self.usersIDs.size, 1.5))
-		CLUSTER_COUNT = round(self.usersIDs.size ** (1 / 1.75))
+		CLUSTER_COUNT = round(self.usersIDs.size ** (1 / 2))
 
 		print("\nMax user candidates: {}, Total users: {}".format(MAX_CANDIDATES, self.usersIDs.size))
 
@@ -429,6 +389,39 @@ class Recommender:
 					command = "yes"
 
 
+	# OTHER METHODS
+
+	def parse_queries(self, path:str):
+
+		data = []
+		indexes = []
+		pdict = {}
+		lineCount = 0
+
+		with open(path) as f:
+			for row in f:
+				lineCount += 1
+				row = row.rstrip('\n')
+				values = row.split(",")
+				indexes.append(values[0])
+				values = values[1::]
+
+				element = ["" for i in range(len(self.datasetFeatures))]
+
+				for val in values:
+					attr = val.split("=") #attr[0] -> feature's name, attr[1] -> feature's value
+					ind = self.datasetFeatures.index(attr[0])
+					element[ind] = attr[1]
+
+				data.append(element)
+
+		if lineCount > 0:
+			data = np.array(data).T
+
+			for i in range(len(self.datasetFeatures)):
+				pdict[self.datasetFeatures[i]] = data[i] 
+
+		return dt.Frame(pdict), indexes
 
 
 	# PART B of ASSIGNMENT [Theorical]
