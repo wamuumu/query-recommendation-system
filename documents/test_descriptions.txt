@@ -1,5 +1,15 @@
 data_test 1:
- - dimesioni piccole con valori simili produce valori simili
+ - query simili e utenti simili producono risultati simili (similarità tra query e utenti)
 
 data_test 2:
- - dimensioni grandi con stessi utenti produce valori simili (U1 == U2, Prime 3 query simili)
+ - dimensioni grandi con stessi utenti e query diverse produce valori simili (U1 == U2, Prime 3 query simili)
+
+data_test 3:
+ - query completamente diversi con utenti simili producono valori simili (similarità tra soli utenti)
+
+data_test 4:
+ - query simili e utenti completamente diversi producono valori simili (similarità tra sole query)
+
+data_test 5:
+ - query completamente diverse con utenti completamente diversi non produce risultati
+
