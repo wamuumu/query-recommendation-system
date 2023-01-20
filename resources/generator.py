@@ -11,9 +11,9 @@ import csv
 import os
 
 #constants
-MAX_DATA = 10
-MAX_QUERIES = 4
-MAX_USERS = 2
+MAX_DATA = 30000
+MAX_QUERIES = 1000
+MAX_USERS = 1000
 
 MIN_ETA, MAX_ETA = 18, 55
 MIN_VOTE, MAX_VOTE = 1, 100
@@ -124,7 +124,7 @@ def create_users():
 
 	distances = dist.pairwise(addresses[['lat', 'lng']].to_numpy()) * 6373
 
-	for i in range(MAX_USERS):
+	for i in range(MAX_USERS):	
 		user = "U" + str(i+1)
 		usersIDs.append(user)
 

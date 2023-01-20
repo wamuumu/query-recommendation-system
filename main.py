@@ -68,7 +68,6 @@ if __name__ == "__main__":
 	print(predictions)
 
 	#print(predictions.max().to_numpy(), max(predictions.max().to_numpy()))
-	exit(0)
 
 	# Save prediction in csv file using generator csv writer
 	

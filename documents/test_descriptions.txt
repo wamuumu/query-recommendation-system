@@ -13,3 +13,5 @@ data_test 4:
 data_test 5:
  - query completamente diverse con utenti completamente diversi non produce risultati
 
+Regex search:
+(.*,F,.*,52,.*)
