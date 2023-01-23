@@ -109,11 +109,10 @@ class Recommender:
 
 			while self.queriesIDs.size != len(queryList) and partition.size != 0:
 				index_min = partition[0]
-				if shingles_dict[index_min]:
-					for q in shingles_dict[index_min]:
-						if not q in queryList:
-							queryList.add(q)
-							sign_mat[i][q] = perm[index_min]
+				for q in shingles_dict[index_min]:
+					if not q in queryList:
+						queryList.add(q)
+						sign_mat[i][q] = perm[index_min]
 				partition = partition[1::]
 
 			count += 1
@@ -201,7 +200,7 @@ class Recommender:
 	def compute_userSimilarities(self):
 
 		MAX_CANDIDATES = round(math.log(self.usersIDs.size, 1.5))
-		CLUSTER_COUNT = round(self.usersIDs.size ** (1 / 2))
+		CLUSTER_COUNT = round(self.usersIDs.size ** (1/2))
 
 		print("\nMax user candidates: {}, Total users: {}".format(MAX_CANDIDATES, self.usersIDs.size))
 
@@ -297,14 +296,13 @@ class Recommender:
 
 		for i, j in scores_to_predict:
 
-			# COLLABORATIVE FILTERING QUERY-QUERY 
+			# CONTENT-BASED FILTERING QUERY-QUERY 
 			if j in querySimilarities:
 
 				userRating = self.ratings[i][querySimilarities[j]["indexes"]]
-				simScores = querySimilarities[j]["values"].copy()
+				simScores = querySimilarities[j]["values"]
 
-				simScores[userRating == 0] = 0
-				weightSum = np.sum(simScores)
+				weightSum = np.sum(simScores[userRating != 0])
 
 				if weightSum == 0:
 					queryPrediction = 0
@@ -316,10 +314,9 @@ class Recommender:
 
 			# COLLABORATIVE FILTERING USER-USER
 			userRating = self.ratings.T[j][userSimilarities[i]["indexes"]]
-			simScores = userSimilarities[i]["values"].copy()
+			simScores = userSimilarities[i]["values"]
 			
-			simScores[userRating == 0] = 0
-			weightSum = np.sum(simScores)
+			weightSum = np.sum(simScores[userRating != 0])
 
 			if weightSum == 0:
 				userPrediction = 0
@@ -358,7 +355,7 @@ class Recommender:
 
 		predictions = predictions.to_numpy()
 
-		while command != "no":
+		while command.lower() != "no":
 			while True:
 				user = input("Enter user ID: [int][Max: " + str(self.usersIDs.size) + "] ")
 				if user.isdigit():
