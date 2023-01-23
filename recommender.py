@@ -421,24 +421,6 @@ class Recommender:
 		return dt.Frame(pdict), indexes
 
 
-	# PART B of ASSIGNMENT [Theorical]
-
-	def suggest_queries(self, predictions):
-		
-		predictions = predictions.to_numpy().T
-		suggestions = []
-
-		initial = time.time()
-		for q in range(len(predictions)):
-			suggestions.append((self.queriesIDs[q], np.nanmean(predictions[q]), self.tupleCount[q]))
-
-		suggestions.sort(key=lambda item: (item[1], item[2]), reverse=True)
-
-		print(str(round(time.time() - initial, 3)) + "s for queries suggestion")
-
-		return suggestions
-
-
 
 
 	    
