@@ -4,6 +4,7 @@ from datatable import dt
 
 import numpy as np
 import time
+import os.path
 
 if __name__ == "__main__":
 
@@ -13,48 +14,72 @@ if __name__ == "__main__":
 	# Fetch initial data 
 
 	initial = time.time()
-	dataset = dt.fread("./resources/output/dataset.csv")
+	path = "./resources/output/dataset.csv"
+
+	if not os.path.exists(path):
+		print("Error: {} doesn't exist!".format(path))
+		exit(1)
+
+	dataset = dt.fread(path)
 	print(str(round(time.time() - initial, 3)) + "s to read dataset")
 
 	drows, dcols = dataset.shape
 
 	if drows == 0:
-		print("The dataset is empty!")
-		exit(1)
+		print("Error: the dataset is empty!")
+		exit(2)
 
 	# features of dataset to parse queries
 	recommender.datasetFeatures = list(dataset.names)[1::]
 
 	initial = time.time()
-	users = dt.fread("./resources/output/users.csv", header=False)
+	path = "./resources/output/users.csv"
+
+	if not os.path.exists(path):
+		print("Error: {} doesn't exist!".format(path))
+		exit(1)
+
+	users = dt.fread(path, header=False)
 	print(str(round(time.time() - initial, 3)) + "s to read users")
 
 	urows, ucols = users.shape
 
 	if urows == 0:
-		print("The user set is empty!")
-		exit(1)
+		print("Error: the user set is empty!")
+		exit(2)
 
 	initial = time.time()
-	queries, queriesIDs = recommender.parse_queries("./resources/output/queries.csv")
+	path = "./resources/output/queries.csv"
+
+	if not os.path.exists(path):
+		print("Error: {} doesn't exist!".format(path))
+		exit(1)
+
+	queries, queriesIDs = recommender.parse_queries(path)
 	print(str(round(time.time() - initial, 3)) + "s to read queries")
 
 	qrows, qcols = queries.shape
 
 	if qrows == 0:
-		print("The query set is empty!")
-		exit(1)
+		print("Error: the query set is empty!")
+		exit(2)
 
 	initial = time.time()
 	cols = ["user"] + queriesIDs 
-	ratings = dt.fread("./resources/output/utility_matrix.csv", columns=cols)
+	path = "./resources/output/utility_matrix.csv"
+
+	if not os.path.exists(path):
+		print("Error: {} doesn't exist!".format(path))
+		exit(1)
+
+	ratings = dt.fread(path, columns=cols)
 	print(str(round(time.time() - initial, 3)) + "s to read utility matrix")
 	
 	urows, ucols = ratings.shape
 
 	if urows == 0:
-		print("The utility matrix is empty!")
-		exit(1)
+		print("Error: the utility matrix is empty!")
+		exit(2)
 
 	# Assign all values to recommender class
 	recommender.init(users, queries, queriesIDs, dataset, ratings)
