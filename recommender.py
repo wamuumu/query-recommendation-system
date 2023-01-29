@@ -20,6 +20,10 @@ import collections
 import math
 import time
 
+# numba
+import numba
+from numba import jit
+
 pd.options.mode.chained_assignment = None 
 
 # constants
@@ -28,6 +32,19 @@ PERM = 120 # number of independent hash functions (e.g. 100) for computing signa
 QUERY_WEIGHT = 0.6
 USER_WEIGHT = 0.4
 DEFAULT_MEAN = 60
+
+@jit(nopython=True)
+def weighted_average(ratings, indexes, simScores):
+
+	prediction = 0
+	userRating = ratings[indexes]
+
+	weightSum = np.sum(simScores[userRating != 0])
+
+	if weightSum != 0:
+		prediction = np.sum(userRating * simScores) / weightSum
+
+	return prediction
 
 class Recommender:
 
@@ -62,23 +79,19 @@ class Recommender:
 			shingles_dict[d] = []
 
 		count = 0
+
 		for q in range(self.queriesIDs.size):
 
-			#query = ""
-			filteredDataset = self.dataset
+			cond = True
 			for ft in range(len(self.datasetFeatures)):
 				if self.queries[q][ft] != "":
-					filteredDataset = filteredDataset[filteredDataset[self.datasetFeatures[ft]] == self.queries[q][ft]]
-					#if query == "":
-						#query = self.datasetFeatures[ft] + '=="' + self.queries[q][ft] + '"'
-					#else:
-						#query += ' | ' + self.datasetFeatures[ft] + '=="' + self.queries[q][ft] + '"'
+					cond &= (self.dataset[self.datasetFeatures[ft]] == self.queries[q][ft])
 
-			#filteredDataset = self.dataset.query(query, inplace=False)
+			answer_set = cond[cond].index.values
 
-			self.tupleCount[q] = len(filteredDataset.index.values)
+			self.tupleCount[q] = len(answer_set)
 
-			for ind in filteredDataset.index.values:
+			for ind in answer_set:
 				shingles_dict[ind].append(q)
 
 			count += 1
@@ -120,32 +133,34 @@ class Recommender:
 			if count % max(1, round(PERM * 0.1)) == 0:
 				print("{} / {} [{}s]".format(count, PERM, round(time.time() - initial, 3)))
 
-		sign_mat = sign_mat.T #get column, i.e. signature
+		sign_mat = sign_mat.T # get columns, i.e. signatures
 
 		print(str(round(time.time() - initial, 3)) + "s for signature_matrix")
-
+		
 		return sign_mat
 
 	def compute_querySimilarities(self):
+
+		queryTime = time.time()
 
 		signatures = self.compute_signatures()
 		
 		MAX_CANDIDATES = round(math.log(self.queriesIDs.size, 1.5))
 
-		QUERY_THRESH = 0.4
+		LSH_THRESH = 0.4 # lower this value to find more candidates with less precision
 		band = 40
 
-		print("\nQuery Thresh: " + str(QUERY_THRESH))
+		print("\nQuery Thresh: " + str(LSH_THRESH))
 		for b in list(range(1, PERM))[::-1]:
 			if PERM % b == 0 and b % 10 == 0:
 				r = PERM / b
 				thresh = round((1/b) ** (1/r), 2)
 				print(b, r, thresh)
-				if thresh >= QUERY_THRESH:
+				if thresh >= LSH_THRESH:
 					band = b
 					break
 
-		print("\nMax query candidates: {}, Max bands: {}, Total queries: {}".format(MAX_CANDIDATES, band, self.queriesIDs.size))
+		print("\nMax query candidates: {}, Max bands: {}, Band size: {}, Total queries: {}".format(MAX_CANDIDATES, band, PERM / band, self.queriesIDs.size))
 
 		# ================================= LSH =================================
 
@@ -161,8 +176,6 @@ class Recommender:
 		print("Candidates pair: {}".format(len(candidates)))
 
 		# ================ COSINE SIMILARITY BETWEEN CANDIDATES =================
-
-		initial = time.time()
 
 		query_sim = {}
 
@@ -185,7 +198,7 @@ class Recommender:
 			query_sim[j]['indexes'].append(i)
 			query_sim[j]['values'].append(sim)
 
-		query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
+		#query_sim = dict(collections.OrderedDict(sorted(query_sim.items())))
 
 		for i in query_sim:
 			ind = np.argsort(query_sim[i]["values"])[::-1][0:MAX_CANDIDATES]
@@ -193,14 +206,16 @@ class Recommender:
 			query_sim[i]["indexes"] = np.array(query_sim[i]["indexes"])[ind]
 			query_sim[i]["values"] = np.array(query_sim[i]["values"])[ind]
 
-		print(str(round(time.time() - initial, 3)) + "s for queries_similarity scores")
+		print("\n"+str(round(time.time() - queryTime, 3)) + "s for overall queries_similarity scores")
 
 		return query_sim
 
 	def compute_userSimilarities(self):
 
+		userTime = time.time()
+
 		MAX_CANDIDATES = round(math.log(self.usersIDs.size, 1.5))
-		CLUSTER_COUNT = round(self.usersIDs.size ** (1/2))
+		CLUSTER_COUNT = round(self.usersIDs.size ** (1/2)) # criteria to stop global clustering of BIRCH
 
 		print("\nMax user candidates: {}, Total users: {}".format(MAX_CANDIDATES, self.usersIDs.size))
 
@@ -208,23 +223,18 @@ class Recommender:
 
 		initial = time.time()
 			
-		scores = self.ratings.copy()
-
-		for s in range(len(scores)):
-			mean = np.mean(scores[s][scores[s] != 0])
-			mean = 0 if math.isnan(mean) else mean
-			scores[s][scores[s] == 0] = mean
-
 		scaler = StandardScaler()
-		normScores = scaler.fit_transform(scores)
+		normScores = scaler.fit_transform(self.ratings)
 
-		r, c = normScores.shape
-		n_comps = min(r, c, 100) # common heuristic for SVD and PCA
+		# r, c = normScores.shape
+		# n_comps = min(r, c, 100)
 
-		normScores = PCA(n_components = n_comps).fit_transform(normScores)
+		pca = PCA(n_components = 0.85, svd_solver = 'full').fit(normScores)
+		n_comps = pca.n_components_
+		variance = round(sum(pca.explained_variance_ratio_), 2)
+		normScores = pca.transform(normScores)
 
-		print(str(round(time.time() - initial, 3)) + "s for normalization and PCA")
-
+		print("{}s for normalization and PCA [{} components - {} variance]".format(round(time.time() - initial, 3), n_comps, variance))
 
 		# ================================== CLUSTERING ==================================
 
@@ -236,10 +246,7 @@ class Recommender:
 
 		print(str(round(time.time() - initial, 3)) + "s for clustering")
 
-
 		# ====================== CENTERED COSINE SIMILARITY BETWEEN CLUSTER ======================
-
-		initial = time.time()
 
 		cluster_sim = {}
 
@@ -271,7 +278,7 @@ class Recommender:
 			user_sim[i]["indexes"] = np.array(cluster_sim[clusterID]["indexes"])[ind]
 			user_sim[i]["values"]  = np.array(cluster_sim[clusterID]["values"][userID])[ind]
 
-		print(str(round(time.time() - initial, 3)) + "s for users_similarity scores")
+		print("\n"+str(round(time.time() - userTime, 3)) + "s for overall users_similarity scores")
 
 		return user_sim
 
@@ -296,32 +303,15 @@ class Recommender:
 
 		for i, j in scores_to_predict:
 
-			# CONTENT-BASED FILTERING QUERY-QUERY 
+			# COLLABORATIVE FILTERING QUERY-QUERY
 			if j in querySimilarities:
-
-				userRating = self.ratings[i][querySimilarities[j]["indexes"]]
-				simScores = querySimilarities[j]["values"]
-
-				weightSum = np.sum(simScores[userRating != 0])
-
-				if weightSum == 0:
-					queryPrediction = 0
-				else:
-					queryPrediction = np.sum(userRating * simScores) / weightSum
+				queryPrediction = weighted_average(self.ratings[i], querySimilarities[j]["indexes"], querySimilarities[j]["values"])
 			else:
 				queryPrediction = 0
 
 
 			# COLLABORATIVE FILTERING USER-USER
-			userRating = self.ratings.T[j][userSimilarities[i]["indexes"]]
-			simScores = userSimilarities[i]["values"]
-			
-			weightSum = np.sum(simScores[userRating != 0])
-
-			if weightSum == 0:
-				userPrediction = 0
-			else:
-				userPrediction = np.sum(userRating * simScores) / weightSum
+			userPrediction = weighted_average(self.ratings.T[j], userSimilarities[i]["indexes"], userSimilarities[i]["values"])
 
 
 			# HYBRID PREDICTIONS

@@ -1,4 +1,5 @@
 datatable==1.0.0
+numba==0.56.4
 numpy==1.23.1
 pandas==1.4.3
-scikit_learn==1.2.0
+scikit_learn==1.2.1

@@ -95,6 +95,7 @@ if __name__ == "__main__":
 	#print(predictions.max().to_numpy(), max(predictions.max().to_numpy()))
 
 	# Save prediction in csv file using generator csv writer
+	exit(0)
 	
 	command = ""
 	while not command.lower() in ["yes", "no"]:
