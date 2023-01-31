@@ -11,9 +11,9 @@ import csv
 import os
 
 #constants
-MAX_DATA = 10000
-MAX_QUERIES = 1000
-MAX_USERS = 1000
+MAX_DATA = 1000
+MAX_QUERIES = 100
+MAX_USERS = 100
 
 MIN_ETA, MAX_ETA = 18, 55
 MIN_VOTE, MAX_VOTE = 1, 100
@@ -234,18 +234,20 @@ def create_queries():
 
 			if len(filteredDataset.index.values) > 0:
 				
+				'''
 				found = False
 				for q in data:
 					if q[1::] == item[1::]:
 						found = True
 
 				if not found:
-					queriesIDs.append(queryID)
-					queries.append(query)
-					data.add(item)
+				'''
+				queriesIDs.append(queryID)
+				queries.append(query)
+				data.add(item)
 
-					if len(data) % max(1, round(MAX_QUERIES * 0.1)) == 0:
-						print("{} / {} [{}s]".format(len(data), MAX_QUERIES, round(time.time() - initial, 3)))
+				if len(data) % max(1, round(MAX_QUERIES * 0.1)) == 0:
+					print("{} / {} [{}s]".format(len(data), MAX_QUERIES, round(time.time() - initial, 3)))
 			else:
 				continue
 			
@@ -299,7 +301,7 @@ def create_matrix():
 			
 			choice = random.randint(0, 3)
 
-			if choice <= 0 or user_queries[q] == u:
+			if choice <= 0 or user_queries[q] == u: # 25 % fill
 				
 				score = qgender.count(user_tastes[u]['likes']) * fweights["gender"]
 				score += intersection_score(qaddress, user_tastes[u]["addresses"]) * fweights["address"]

@@ -92,11 +92,8 @@ if __name__ == "__main__":
 		print("\nFINAL PREDICTIONS [{} scores to predict, {} scores missed - {}% miss]:".format(len(to_predict), len(missed), round((len(missed) / len(to_predict)) * 100, 3)))	
 	print(predictions)
 
-	#print(predictions.max().to_numpy(), max(predictions.max().to_numpy()))
 
 	# Save prediction in csv file using generator csv writer
-	exit(0)
-	
 	command = ""
 	while not command.lower() in ["yes", "no"]:
 		command = input("Do you want to export final predictions? [Yes-No][Default: Yes] ")
@@ -113,6 +110,7 @@ if __name__ == "__main__":
 
 		print("Final utility matrix saved in output/final_predictions.csv")
 
+	# Ask for user and k, then give recommendations
 	recommender.top_k_queries(to_predict, predictions, missed)
 
 	exit(0)
